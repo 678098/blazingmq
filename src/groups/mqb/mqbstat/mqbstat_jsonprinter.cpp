@@ -196,10 +196,14 @@ class JsonPrinter::JsonPrinterImpl {
 inline JsonPrinter::JsonPrinterImpl::JsonPrinterImpl(
     const StatContextsMap& statContextsMap,
     bslma::Allocator*      allocator)
-: d_opsCompact(bdljsn::WriteOptions().setSpacesPerLevel(0).setStyle(
-      bdljsn::WriteStyle::e_COMPACT))
-, d_opsPretty(bdljsn::WriteOptions().setSpacesPerLevel(4).setStyle(
-      bdljsn::WriteStyle::e_PRETTY))
+: d_opsCompact(bdljsn::WriteOptions()
+                   .setSpacesPerLevel(0)
+                   .setStyle(bdljsn::WriteStyle::e_COMPACT)
+                   .setSortMembers(true))
+, d_opsPretty(bdljsn::WriteOptions()
+                  .setSpacesPerLevel(4)
+                  .setStyle(bdljsn::WriteStyle::e_PRETTY)
+                  .setSortMembers(true))
 , d_contexts(statContextsMap, allocator)
 {
     // NOTHING

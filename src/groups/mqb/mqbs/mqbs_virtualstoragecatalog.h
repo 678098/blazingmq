@@ -69,9 +69,6 @@ class VirtualStorageCatalog {
 
     typedef VirtualStorages::const_iterator VirtualStoragesConstIter;
 
-    typedef bsl::function<void(const bsl::string&)>
-        AppIdVisitor;  // todo remove
-
   private:
     // DATA
     mqbi::Storage* d_storage_p;  // Physical storage underlying all
