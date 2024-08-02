@@ -26,9 +26,9 @@
 // storages associated with a queue.
 
 // MQB
-
 #include <mqbi_storage.h>
 #include <mqbs_virtualstorage.h>
+#include <mqbstat_queuestats.h>
 #include <mqbu_storagekey.h>
 
 // MWC
@@ -79,6 +79,9 @@ class VirtualStorageCatalog {
     // Map of appKey to corresponding
     // virtual storage
 
+    /// Optional queue stats to update. Held, not owned
+    mqbstat::QueueStatsDomain* d_stats_p;
+
     bslma::Allocator* d_allocator_p;  // Allocator to use
 
   private:
@@ -98,9 +101,6 @@ class VirtualStorageCatalog {
 
     typedef mqbi::Storage::AppIdKeyPairs AppIdKeyPairs;
 
-    typedef bsl::function<void(bsls::Types::Int64, const bsl::string&)>
-        OnStorageUpdateCb;
-
     // CREATORS
 
     /// Create an instance of virtual storage catalog with the specified
@@ -111,18 +111,21 @@ class VirtualStorageCatalog {
     ~VirtualStorageCatalog();
 
     // MANIPULATORS
+    /// Use the specified `stats` to report metrics on message add, delete or
+    /// storage purge.  The provided NULL value is also valid and means that no
+    /// stats updates required.  Typically `stats` should be set on PRIMARY,
+    /// and unset in REPLICA and PROXY.
+    void setQueueStats(mqbstat::QueueStatsDomain* stats);
 
     /// Save the message having the specified `msgGUID`, `msgSize` and
     /// `rdaInfo` to the virtual storage associated with the specified
     /// `appKey`.  Note that if `appKey` is null, the message will be added
     /// to all virtual storages maintained by this instance.
-    mqbi::StorageResult::Enum
-    put(const bmqt::MessageGUID& msgGUID,
-        int                      msgSize,
-        const bmqp::RdaInfo&     rdaInfo,
-        unsigned int             subScriptionId,
-        const mqbu::StorageKey&  appKey,
-        const OnStorageUpdateCb& putCb = OnStorageUpdateCb());
+    mqbi::StorageResult::Enum put(const bmqt::MessageGUID& msgGUID,
+                                  int                      msgSize,
+                                  const bmqp::RdaInfo&     rdaInfo,
+                                  unsigned int             subScriptionId,
+                                  const mqbu::StorageKey&  appKey);
 
     /// Get an iterator for items stored in the virtual storage identified
     /// by the specified `appKey`.  Iterator will point to point to the
@@ -155,19 +158,15 @@ class VirtualStorageCatalog {
     /// null, then remove the message from the storages for all clients.
     /// Return 0 on success, or a non-zero return code if the `msgGUID` was
     /// not found or the `appKey` is invalid.
-    mqbi::StorageResult::Enum
-    remove(const bmqt::MessageGUID& msgGUID,
-           const mqbu::StorageKey&  appKey,
-           const OnStorageUpdateCb& removeCb = OnStorageUpdateCb());
+    mqbi::StorageResult::Enum remove(const bmqt::MessageGUID& msgGUID,
+                                     const mqbu::StorageKey&  appKey);
 
     /// Remove all messages from the storage for the client identified by
     /// the specified `appKey`.  If `appKey` is null, then remove messages
     /// for all clients.  Return one of the return codes from:
     /// * **e_SUCCESS**          : `msgGUID` was not found
     /// * **e_APPKEY_NOT_FOUND** : Invalid `appKey` specified
-    mqbi::StorageResult::Enum
-    removeAll(const mqbu::StorageKey&  appKey,
-              const OnStorageUpdateCb& purgeCb = OnStorageUpdateCb());
+    mqbi::StorageResult::Enum removeAll(const mqbu::StorageKey& appKey);
 
     /// Create, if it doesn't exist already, a virtual storage instance with
     /// the specified `appId` and `appKey`.  Return zero upon success and a
