@@ -56,14 +56,14 @@ class TestPutsRetransmission:
     The test expects:
         1. Success ACKs for all PUTs
         2. The same order of PUSH messages as the order of PUT messages
-            (monotonically increasing "msg%10d|")
+            (monotonically increasing "msg%d")
         3. No duplicates except for 'kill' cases.  Killing either primary or
-            replica) can result in lost CONFIRMs (among other messagetypes).  The
+            replica can result in lost CONFIRMs (among other messagetypes).  The
             primary (either new or existing) 'redelivers' unconfirmed messages
             (either because it is the new primary or new replica opens the queue).
             This results in the same message delivered twice to consumer.
          4. No lost messages, even in 'kill primary' cases because of strong
-            consitency.
+            consistency.
     """
 
     work_dir: Path
@@ -76,7 +76,7 @@ class TestPutsRetransmission:
         assert leader
 
         assert wait_until(
-            lambda: self.capture_number_of_consumed_messages(2 * NUM_MESSAGES), 40
+            lambda: self.capture_number_of_consumed_messages(NUM_MESSAGES), 40
         )
 
         for uri, consumer in zip(self.uris, self.consumers):
@@ -101,8 +101,8 @@ class TestPutsRetransmission:
         Push = namedtuple("Push", ["message_index", "guid", "index"])
         Confirm = namedtuple("Confirm", ["message_index", "guid"])
 
-        puts = [None for i in range(NUM_MESSAGES)]  # all Put messages
-        acks = [None for i in range(NUM_MESSAGES)]  # all Ack messages
+        puts = [None for _ in range(NUM_MESSAGES)]  # all Put messages
+        acks = [None for _ in range(NUM_MESSAGES)]  # all Ack messages
 
         guids = {}  # {guid -> index}
 
@@ -112,13 +112,13 @@ class TestPutsRetransmission:
         num_duplicates = 0
         num_errors = 0
 
-        def warning(test_logger, prefix, p1, p2=None):
+        def warning(prefix, p1, p2=None):
             test_logger.warning(f'{prefix}: {p1}{f" vs existing {p2}" if p2 else ""}')
 
-        def error(test_logger, prefix, p1, p2=None):
+        def error(prefix, p1, p2=None):
             nonlocal num_errors
             num_errors += 1
-            warning(test_logger, prefix, p1, p2)
+            warning(prefix, p1, p2)
 
         consumer_log = self.work_dir / "producer.log"
         with open(consumer_log, encoding="ascii") as f:
@@ -173,12 +173,12 @@ class TestPutsRetransmission:
                         )
 
                         if message_index is None:
-                            error(test_logger, "unexpected ACK guid", ack)
+                            error("unexpected ACK guid", ack)
                         elif puts[message_index] is None:
-                            error(test_logger, "unexpected ACK payload", ack)
+                            error("unexpected ACK payload", ack)
                         elif acks[message_index]:
                             error(
-                                test_logger, "duplicate ACK", ack, acks[message_index]
+                                "duplicate ACK", ack, acks[message_index]
                             )
                         else:
                             acks[message_index] = ack
@@ -187,9 +187,7 @@ class TestPutsRetransmission:
                                 num_acks += 1
                             else:
                                 num_nacks += 1
-                                warning(
-                                    test_logger,
-                                    f"unsuccessful ({status}) ACK",
+                                warning(f"unsuccessful ({status}) ACK",
                                     ack,
                                     puts[message_index],
                                 )
@@ -232,9 +230,7 @@ class TestPutsRetransmission:
 
                         if pushes[message_index]:  # duplicate PUSH
                             num_duplicates += 1
-                            warning(
-                                test_logger,
-                                f"{app}: duplicate PUSH payload",
+                            warning(f"{app}: duplicate PUSH payload",
                                 push,
                                 pushes[message_index],
                             )
@@ -243,13 +239,11 @@ class TestPutsRetransmission:
                             consumed += 1
 
                             if puts[message_index] is None:  # no corresponding PUT
-                                error(test_logger, f"{app}: unexpected PUSH", push)
+                                error(f"{app}: unexpected PUSH", push)
                             elif acks[message_index] is None:  # no corresponding ACK:
-                                error(test_logger, f"{app}: unexpected PUSH", push)
+                                error(f"{app}: unexpected PUSH", push)
                             elif acks[message_index].guid != guid:  # ACK GUID mismatch
-                                error(
-                                    test_logger,
-                                    f"{app}: GUID mismatch",
+                                error(f"{app}: GUID mismatch",
                                     push,
                                     acks[message_index],
                                 )
@@ -263,21 +257,19 @@ class TestPutsRetransmission:
 
                             if message_index is None:
                                 error(
-                                    test_logger,
                                     f"{app}: unexpected CONFIRM guid",
                                     confirm,
                                 )
                             elif pushes[message_index] is None:
-                                error(
-                                    test_logger, f"{app}: unexpected CONFIRM", confirm
+                                error(f"{app}: unexpected CONFIRM", confirm
                                 )
                             else:
                                 num_confirms += 1
 
             test_logger.info(
                 f"{app}: {num_puts} PUTs"
-                f", {num_acks} acks"
-                f", {num_nacks} nacks"
+                f", {num_acks} ACKs"
+                f", {num_nacks} NACKs"
                 f", {consumed} PUSHs"
                 f", {num_confirms} CONFIRMs"
                 f", {num_duplicates} duplicates"
@@ -288,14 +280,15 @@ class TestPutsRetransmission:
                 if pushes[message_index] is None:
                     # never received 'message_index'
                     if acks[message_index]:
-                        error(
-                            test_logger, f"{app}: missing message", acks[message_index]
+                        error(f"{app}: missing message", acks[message_index]
                         )
                     num_lost += 1
                 elif pushes[message_index].index != (message_index - num_lost):
-                    error(
-                        test_logger, f"{app}: out of order PUSH", pushes[message_index]
+                    error(f"{app}: out of order PUSH", pushes[message_index]
                     )
+
+        if consumed != num_puts:
+            assert False
 
         assert num_puts == num_acks
         assert consumed == num_puts

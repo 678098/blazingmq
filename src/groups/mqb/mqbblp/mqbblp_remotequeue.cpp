@@ -1524,7 +1524,7 @@ void RemoteQueue::cleanPendingMessages(mqbi::QueueHandle* handle)
     }
 
     BALL_LOG_INFO << d_state_p->uri() << ": erased " << numMessages
-                  << " pending message(s) while releasing handle.";
+                  << " pending message(s) while releasing handle. " << d_unackedPutCounter;
 }
 
 RemoteQueue::Puts::iterator& RemoteQueue::nack(Puts::iterator&   it,
