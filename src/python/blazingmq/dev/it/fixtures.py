@@ -336,7 +336,7 @@ def cluster_fixture(request, configure) -> Iterator[Cluster]:
             # and we only have 14GB of storage on a GitHub Runner, that is why we need
             # to reduce storage file sizes for integration tests.
             configurator.proto.cluster.partition_config.max_data_file_size = (
-                67108864  # 64MiB
+                2108864  # 64MiB
             )
             configurator.proto.cluster.partition_config.max_journal_file_size = (
                 16777216  # 16MiB
