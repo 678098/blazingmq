@@ -77,6 +77,122 @@ static void threadFunction(bsl::vector<bmqt::MessageGUID>* out,
     }
 }
 
+struct GUIDGenerationPattern {
+    virtual ~GUIDGenerationPattern()
+    {
+        // NOTHING
+    }
+
+    /// Generate the next 16-byte GUID in raw byte format and put it in
+    /// the specified `buffer`.
+    virtual void generate(unsigned char* buffer) = 0;
+
+    /// Fill the specified `guids` with the specified `num` of MessageGUID
+    /// according to rules in this generator.
+    void generate(bsl::vector<bmqt::MessageGUID>* guids, size_t num)
+    {
+        // PRECONDITIONS
+        BSLS_ASSERT_SAFE(guids);
+
+        guids->resize(num);
+
+        unsigned char buff[bmqt::MessageGUID::e_SIZE_BINARY];
+        for (size_t i = 0; i < num; i++) {
+            generate(buff);
+            guids->at(i).fromBinary(buff);
+        }
+    }
+};
+
+struct StructuredShiftPattern : public GUIDGenerationPattern {
+    uint64_t counter;
+
+    StructuredShiftPattern()
+    : counter(0)
+    {
+        // NOTHING
+    }
+
+    void generate(unsigned char* buffer) override
+    {
+        // Construct GUID from two 64-bit words using structured bit shifts
+        uint64_t hi = ((counter << 3) | (counter >> 61)) ^
+                      0xA5A5A5A5A5A5A5A5ULL;
+        uint64_t lo = ((counter << 7) | (counter >> 57)) ^
+                      0x5A5A5A5A5A5A5A5AULL;
+        counter++;
+
+        bsl::memcpy(buffer, &hi, 8);
+        bsl::memcpy(buffer + 8, &lo, 8);
+    }
+};
+
+struct XORWalkerPattern : public GUIDGenerationPattern {
+    uint64_t counter;
+    uint64_t state;
+
+    XORWalkerPattern()
+    : counter(0)
+    , state(0xDEADBEEFCAFEBABEULL)
+    {
+        // NOTHING
+    }
+
+    void generate(unsigned char* buffer) override
+    {
+        uint64_t hi = state ^ (counter * 0x9E3779B97F4A7C15ULL);
+        uint64_t lo = (~state ^ counter) * 0x94D049BB133111EBULL;
+        counter++;
+
+        bsl::memcpy(buffer, &hi, 8);
+        bsl::memcpy(buffer + 8, &lo, 8);
+    }
+};
+
+struct ReverseNibblePattern : public GUIDGenerationPattern {
+    uint64_t counter = 0;
+
+    uint64_t reverseNibbles(uint64_t x)
+    {
+        uint64_t result = 0;
+        for (int i = 0; i < 16; ++i) {
+            result <<= 4;
+            result |= (x & 0xF);
+            x >>= 4;
+        }
+        return result;
+    }
+
+    void generate(unsigned char* buffer) override
+    {
+        uint64_t base = counter++;
+        uint64_t hi   = base;
+        uint64_t lo   = reverseNibbles(base);
+        bsl::memcpy(buffer, &hi, 8);
+        bsl::memcpy(buffer + 8, &lo, 8);
+    }
+};
+
+struct InterleavedBitsPattern : public GUIDGenerationPattern {
+    uint64_t counter = 0;
+
+    void generate(unsigned char* buffer) override
+    {
+        uint64_t input = counter++;
+        uint64_t hi = 0, lo = 0;
+        for (int i = 0; i < 64; ++i) {
+            if (input & (1ULL << i)) {
+                if (i % 2 == 0)
+                    hi |= (1ULL << (i / 2));
+                else
+                    lo |= (1ULL << (i / 2));
+            }
+        }
+        bsl::memcpy(buffer, &hi, 8);
+        bsl::memcpy(buffer + 8, &lo, 8);
+    }
+};
+
 /// This class provides a legacy custom implementation of hashing algorithm for
 /// `bmqt::MessageGUID`.  The implementation uses the unrolled djb2 hash, that
 /// was faster than the default hashing algorithm that comes with `bslh`
@@ -129,6 +245,62 @@ class LegacyHash {
         d_result          = (d_result << 5) + d_result + start[13];
         d_result          = (d_result << 5) + d_result + start[14];
         d_result          = (d_result << 5) + d_result + start[15];
+    }
+
+    /// Return the computed hash.
+    result_type computeHash() { return d_result; }
+};
+
+class OptHash {
+  private:
+    // DATA
+    bsls::Types::Uint64 d_result;
+
+  public:
+    // TYPES
+    typedef bsls::Types::Uint64 result_type;
+
+    /// Constructor
+    OptHash()
+    : d_result(0)
+    {
+    }
+
+    // MANIPULATORS
+    /// Compute the trivial hash of the specified `data`. The specified
+    /// `numBytes` is not used.
+
+    inline void operator()(const void*                   data,
+                           BSLS_ANNOTATION_UNUSED size_t numBytes)
+    {
+        struct LocalFuncs {
+            /// Optimized single-step mix + combine function
+            inline static uint64_t mixCombine(uint64_t x, uint64_t y)
+            {
+                x ^= (y + 0x517cc1b727220a95ULL);  // Add randomness
+                x *= 0xff51afd7ed558ccdULL;        // First mixing step
+                x ^= x >> 33;                      // Bit diffusion
+                x *= 0xc4ceb9fe1a85ec53ULL;        // Second mixing step
+                return x ^ (x >> 29) ^ y;          // Final XOR cascade
+            }
+
+            inline static uint64_t mix_combine_cpu_friendly(uint64_t x,
+                                                            uint64_t y)
+            {
+                uint64_t temp = y ^ (y >> 29);
+                x ^= (y + 0x517cc1b727220a95ULL);  // Add randomness
+                x *= 0xff51afd7ed558ccdULL;        // First mixing step
+                x ^= x >> 33;                      // Bit diffusion
+                x *= 0xc4ceb9fe1a85ec53ULL;        // Second mixing step
+                return x ^ (x >> 29) ^ temp;          // Final XOR cascade
+            }
+        };
+
+        const bsls::Types::Uint64* start =
+            reinterpret_cast<const bsls::Types::Uint64*>(data);
+        // Load two 64-bit words directly
+        // Single-step hash computation
+        d_result = LocalFuncs::mix_combine_cpu_friendly(start[0], start[1]);
     }
 
     /// Return the computed hash.
@@ -1571,6 +1743,7 @@ static void testN9_hashBenchmarkComparison()
     stats.push_back(benchmarkHash<bslh::Hash<Mx3Hash> >("mx3"));
     stats.push_back(
         benchmarkHash<bslh::Hash<bmqt::MessageGUIDHashAlgo> >("mxm"));
+    stats.push_back(benchmarkHash<bslh::Hash<OptHash> >("onepass"));
 
     Table table;
     for (size_t i = 0; i < stats.size(); i++) {
@@ -1817,7 +1990,8 @@ static void testN10_hashCollisionsComparison()
         {calcCollisions<bsl::hash<bmqt::MessageGUID> >, "default"},
         {calcCollisions<bslh::Hash<LegacyHash> >, "legacy(djb2)"},
         {calcCollisions<bslh::Hash<Mx3Hash> >, "mx3"},
-        {calcCollisions<bslh::Hash<bmqt::MessageGUIDHashAlgo> >, "mxm"}};
+        {calcCollisions<bslh::Hash<bmqt::MessageGUIDHashAlgo> >, "mxm"},
+        {calcCollisions<bslh::Hash<OptHash> >, "onepass"}};
     const size_t k_NUM_HASH_CHECKERS = sizeof(k_HASH_CHECKERS) /
                                        sizeof(*k_HASH_CHECKERS);
 
