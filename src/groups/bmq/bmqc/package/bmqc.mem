@@ -1,4 +1,5 @@
 bmqc_array
+bmqc_atomiclist
 bmqc_monitoredqueue
 bmqc_monitoredqueue_bdlccfixedqueue
 bmqc_monitoredqueue_bdlccsingleconsumerqueue
