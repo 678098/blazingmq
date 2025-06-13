@@ -266,18 +266,20 @@ static void testN1_performance()
 
     // CONSTANTS
     const int k_NUM_QUEUES       = 1;
+    const int k_NUM_THREADS      = 10;
     const int k_NUM_ITERATIONS   = 10 * 1000 * 1000;  // 10 M
     const int k_FIXED_QUEUE_SIZE = 250 * 1000;        // 250K
 
     bdlmt::ThreadPool threadPool(
         bslmt::ThreadAttributes(),        // default
-        3,                                // minThreads
-        3,                                // maxThreads
+        k_NUM_THREADS,                    // minThreads
+        k_NUM_THREADS,                    // maxThreads
         bsl::numeric_limits<int>::max(),  // maxIdleTime
         bmqtst::TestHelperUtil::allocator());
     BSLS_ASSERT_OPT(threadPool.start() == 0);
 
     // Test with MQTP
+    PRINT(sizeof(MQTP::Event))
     PRINT("====");
     PRINT("MQTP");
     PRINT("====");
