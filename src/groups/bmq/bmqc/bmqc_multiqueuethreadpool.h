@@ -1017,13 +1017,13 @@ inline int MultiQueueThreadPool<TYPE>::enqueueEventImp(Event* event, int queue)
     BSLS_ASSERT_SAFE(event);
     BSLS_ASSERT_SAFE(isStarted() && "MQTP has not been started");
 
+    /// Value for the various RC error categories
     enum RcEnum {
-        // Value for the various RC error categories
-        rc_SUCCESS = 0  // No error
-        ,
+        /// No error
+        rc_SUCCESS = 0,
 
-        rc_PUSH_BACK_ERROR = -1  // An error was encountered while pushing
-                                 // back (queue is disabled)
+        /// An error was encountered while pushing back (queue is disabled)
+        rc_PUSH_BACK_ERROR = -1
     };
 
     // Determine start and end queues for which to enqueue
@@ -1092,9 +1092,25 @@ inline MultiQueueThreadPool<TYPE>::~MultiQueueThreadPool()
 template <typename TYPE>
 inline int MultiQueueThreadPool<TYPE>::start()
 {
+    /// Enum for the various RC error categories
+    enum RcEnum {
+        rc_SUCCESS            = 0,
+        rc_NOT_ENOUGH_THREADS = -1,
+        rc_ALREADY_STARTED    = -2
+    };
+
     if (isStarted()) {
         // MQTP has already been started
-        return -2;  // RETURN
+        return rc_ALREADY_STARTED;  // RETURN
+    }
+
+    // Verify threads availability
+    const int numAvailableThreads =
+        d_config.d_threadPool_p->maxThreads() -
+        d_config.d_threadPool_p->numActiveThreads();
+    if (numAvailableThreads < static_cast<int>(d_queues.size())) {
+        // Not enough threads for exclusive use
+        return rc_NOT_ENOUGH_THREADS;  // RETURN
     }
 
     // Create the queues
@@ -1121,14 +1137,6 @@ inline int MultiQueueThreadPool<TYPE>::start()
         d_queues[i].d_processedZero = false;
     }
 
-    // Set up threads
-    int numAvailableThreads = d_config.d_threadPool_p->maxThreads() -
-                              d_config.d_threadPool_p->numActiveThreads();
-    if (numAvailableThreads < static_cast<int>(d_queues.size())) {
-        // Not enough threads for exclusive use
-        return -1;  // RETURN
-    }
-
     BSLS_ASSERT_SAFE(d_config.d_threadPool_p->enabled());
 
     bslmt::Latch latch(d_queues.size());
@@ -1153,7 +1161,7 @@ inline int MultiQueueThreadPool<TYPE>::start()
 
     d_started = true;
 
-    return 0;
+    return rc_SUCCESS;
 }
 
 template <typename TYPE>
