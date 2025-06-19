@@ -34,6 +34,8 @@
 #include <bsla_annotations.h>
 #include <bslma_allocator.h>
 #include <bslma_managedptr.h>
+#include <bslmt_barrier.h>
+#include <bslmt_latch.h>
 #include <bslmt_threadattributes.h>
 #include <bslmt_threadutil.h>
 #include <bsls_assert.h>
@@ -391,7 +393,125 @@ static void testN1_performance()
     printProcessedItems(k_NUM_ITERATIONS, endTime - startTime);
 }
 
-#ifdef BMQTST_BENCHMARK_ENABLED
+static void testN1_MQTP_multi_GoogleBenchmark(benchmark::State& state)
+// ------------------------------------------------------------------------
+// PERFORMANCE TEST
+//
+// Concerns:
+//  a) Check the overhead of the MQTP with multiple producer threads
+//
+// Plan:
+//  1) Create a MQTP with a single queue and enqueue events as quickly as
+//     possible on it from multiple producer threads.  See how many we can
+//     process in a few seconds.
+//
+// Testing:
+//  Performance
+// ------------------------------------------------------------------------
+{
+    bmqtst::TestHelperUtil::ignoreCheckDefAlloc() = true;
+
+    bmqtst::TestHelper::printTestName("MQTP MULTI PRODUCER PERFORMANCE TEST");
+
+    // CONSTANTS
+    const int k_NUM_QUEUES              = 1;
+    const int k_NUM_PRODUCER_THREADS    = 5;
+    const int k_NUM_PRODUCER_ITERATIONS = 10 * 1000 *
+                                          1000;  // 10 M per producer
+    const int k_FIXED_QUEUE_SIZE = 250 * 1000;   // 250K
+
+    struct Local {
+        static void producerFn(MQTP*           mqtp,
+                               bslmt::Latch*   initLatch,
+                               bslmt::Barrier* startBarrier)
+        {
+            initLatch->arrive();
+            startBarrier->wait();
+
+            for (int i = 0; i < k_NUM_PRODUCER_ITERATIONS; ++i) {
+                MQTP::Event* event      = mqtp->getUnmanagedEvent();
+                event->object().value() = i;
+                mqtp->enqueueEvent(event, 0);
+            }
+        }
+
+        static void consumerFn(bslmt::Latch*   finishLatch,
+                               BSLA_UNUSED int queueId,
+                               void*           context,
+                               MQTP::Event*    event)
+        {
+            if (event->type() == MQTP::Event::BMQC_USER) {
+                static int remaining = k_NUM_PRODUCER_THREADS *
+                                       k_NUM_PRODUCER_ITERATIONS;
+                --remaining;
+                if (remaining <= 0) {
+                    finishLatch->arrive();
+                }
+            }
+        }
+    };
+
+    bdlmt::ThreadPool threadPool(
+        bslmt::ThreadAttributes(),        // default
+        3,                                // minThreads
+        3,                                // maxThreads
+        bsl::numeric_limits<int>::max(),  // maxIdleTime
+        bmqtst::TestHelperUtil::allocator());
+    BSLS_ASSERT_OPT(threadPool.start() == 0);
+
+    bslmt::Latch finishConsumerLatch(1);
+
+    MQTP::Config config(
+        k_NUM_QUEUES,
+        &threadPool,
+        bdlf::BindUtil::bindS(bmqtst::TestHelperUtil::allocator(),
+                              &Local::consumerFn,
+                              &finishConsumerLatch,
+                              bdlf::PlaceHolders::_1,   // queueId
+                              bdlf::PlaceHolders::_2,   // context
+                              bdlf::PlaceHolders::_3),  // event),
+        bdlf::BindUtil::bindS(bmqtst::TestHelperUtil::allocator(),
+                              &performanceTestQueueCreator,
+                              bdlf::PlaceHolders::_3,
+                              k_FIXED_QUEUE_SIZE),
+        bmqtst::TestHelperUtil::allocator());
+    config.setGrowBy(k_NUM_PRODUCER_ITERATIONS * k_NUM_PRODUCER_THREADS + 1);
+
+    MQTP mfqtp(config, bmqtst::TestHelperUtil::allocator());
+    BSLS_ASSERT_OPT(mfqtp.start() == 0);
+
+    bdlmt::ThreadPool producerThreadPool(
+        bslmt::ThreadAttributes(),        // default
+        k_NUM_PRODUCER_THREADS,           // minThreads
+        k_NUM_PRODUCER_THREADS,           // maxThreads
+        bsl::numeric_limits<int>::max(),  // maxIdleTime
+        bmqtst::TestHelperUtil::allocator());
+    BSLS_ASSERT_OPT(producerThreadPool.start() == 0);
+
+    bslmt::Latch   initProducersLatch(k_NUM_PRODUCER_THREADS);
+    bslmt::Barrier startProducersBarrier(k_NUM_PRODUCER_THREADS + 1);
+
+    for (int i = 0; i < k_NUM_PRODUCER_THREADS; i++) {
+        producerThreadPool.enqueueJob(
+            bdlf::BindUtil::bindS(bmqtst::TestHelperUtil::allocator(),
+                                  &Local::producerFn,
+                                  &mfqtp,
+                                  &initProducersLatch,
+                                  &startProducersBarrier));
+    }
+
+    initProducersLatch.wait();
+
+    for (auto _ : state) {
+        startProducersBarrier.wait();
+        finishConsumerLatch.wait();
+    }
+
+    producerThreadPool.stop();
+    mfqtp.waitUntilEmpty();
+    mfqtp.stop();
+}
+
 static void testN1_performance_GoogleBenchmark(benchmark::State& state)
 // ------------------------------------------------------------------------
 // PERFORMANCE TEST
@@ -413,7 +533,7 @@ static void testN1_performance_GoogleBenchmark(benchmark::State& state)
 
     // CONSTANTS
     const int k_NUM_QUEUES       = 1;
-    const int k_NUM_ITERATIONS   = 10 * 1000 * 1000;  // 10 M
+    const int k_NUM_ITERATIONS   = 1 * 1000 * 1000;   // 10 M
     const int k_FIXED_QUEUE_SIZE = 250 * 1000;        // 250K
 
     bdlmt::ThreadPool threadPool(
@@ -423,11 +543,6 @@ static void testN1_performance_GoogleBenchmark(benchmark::State& state)
         bsl::numeric_limits<int>::max(),  // maxIdleTime
         bmqtst::TestHelperUtil::allocator());
     BSLS_ASSERT_OPT(threadPool.start() == 0);
-
-    // Test with MQTP
-    PRINT("====");
-    PRINT("MQTP");
-    PRINT("====");
 
     MQTP::Config config(
         k_NUM_QUEUES,
@@ -443,16 +558,12 @@ static void testN1_performance_GoogleBenchmark(benchmark::State& state)
     MQTP mfqtp(config, bmqtst::TestHelperUtil::allocator());
     BSLS_ASSERT_OPT(mfqtp.start() == 0);
 
-    // 1.
-
-    PRINT("Enqueuing " << k_NUM_ITERATIONS << " items.");
     for (auto _ : state) {
         for (int i = 0; i < k_NUM_ITERATIONS; ++i) {
             MQTP::Event* event = mfqtp.getUnmanagedEvent();
             event->object().value() = 0;
             mfqtp.enqueueEvent(event, 0);
         }
-        PRINT("Enqueued " << k_NUM_ITERATIONS << " items.");
 
         mfqtp.waitUntilEmpty();
         mfqtp.stop();
@@ -490,10 +601,6 @@ static void testN1_fixedPerformance_GoogleBenchmark(benchmark::State& state)
         bsl::numeric_limits<int>::max(),  // maxIdleTime
         bmqtst::TestHelperUtil::allocator());
     BSLS_ASSERT_OPT(threadPool.start() == 0);
-    // Now test with fixedQueue
-    PRINT("=================");
-    PRINT("bdlcc::FixedQueue");
-    PRINT("=================");
 
     PerformanceTestObjectPool                 objectPool(-1,
                                          bmqtst::TestHelperUtil::allocator());
@@ -508,7 +615,6 @@ static void testN1_fixedPerformance_GoogleBenchmark(benchmark::State& state)
                               &fixedQueue,
                               &objectPool));
 
-    PRINT("Enqueuing " << k_NUM_ITERATIONS << " items ...");
     for (auto _ : state) {
         for (int i = 0; i < k_NUM_ITERATIONS; ++i) {
             PerformanceTestObject* obj = objectPool.getObject();
@@ -522,7 +628,6 @@ static void testN1_fixedPerformance_GoogleBenchmark(benchmark::State& state)
         }
     }
 }
-#endif  // BMQTST_BENCHMARK_ENABLED
 
 //=============================================================================
 //                                MAIN PROGRAM
@@ -538,8 +643,16 @@ int main(int argc, char* argv[])
     case -1:
 #ifdef BMQTST_BENCHMARK_ENABLED
         BENCHMARK(testN1_fixedPerformance_GoogleBenchmark)
+            ->Iterations(1)
+            ->Range(1, 1)
             ->Unit(benchmark::kMillisecond);
         BENCHMARK(testN1_performance_GoogleBenchmark)
+            ->Iterations(1)
+            ->Range(1, 1)
+            ->Unit(benchmark::kMillisecond);
+        BENCHMARK(testN1_MQTP_multi_GoogleBenchmark)
+            ->Iterations(1)
+            ->Range(1, 1)
             ->Unit(benchmark::kMillisecond);
         benchmark::Initialize(&argc, argv);
         benchmark::RunSpecifiedBenchmarks();

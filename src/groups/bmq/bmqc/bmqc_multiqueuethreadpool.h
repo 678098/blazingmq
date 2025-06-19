@@ -565,7 +565,7 @@ class MultiQueueThreadPool BSLS_KEYWORD_FINAL {
 
     bsl::vector<QueueInfo> d_queues;
 
-    bool d_started;
+    bsls::AtomicBool d_started;
 
     bdlmt::EventScheduler::RecurringEventHandle d_monitorEventHandle;
 
@@ -1078,7 +1078,9 @@ inline MultiQueueThreadPool<TYPE>::MultiQueueThreadPool(
                 reinterpret_cast<uintptr_t>(&d_queueEmptyEvent))
 , d_allocator_p(bslma::Default::allocator(basicAllocator))
 {
-    // NOTHING
+    if (config.d_growBy > 0) {
+        d_pool.reserveCapacity(config.d_growBy);
+    }
 }
 
 template <typename TYPE>
@@ -1304,6 +1306,8 @@ inline void MultiQueueThreadPool<TYPE>::waitUntilEmpty()
             fullPass = false;
         }
     }
+
+    BALL_LOG_ERROR << d_pool.numObjects();
 }
 
 // ACCESSORS
