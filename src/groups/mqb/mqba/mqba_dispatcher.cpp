@@ -291,10 +291,16 @@ int Dispatcher::startContext(bsl::ostream&                    errorDescription,
                       DispatcherContext(config, d_allocator_p),
                   d_allocator_p);
 
+    bslmt::ThreadAttributes attributes(d_allocator_p);
+    attributes.setInheritSchedule(true);
+    attributes.setSchedulingPolicy(
+        bslmt::ThreadAttributes::SchedulingPolicy::BCEMT_SCHED_RR);
+    attributes.setSchedulingPriority(20);
+
     // Create and start the threadPool
     context->d_threadPool_mp.load(
         new (*d_allocator_p)
-            bdlmt::ThreadPool(bmqsys::ThreadUtil::defaultAttributes(),
+            bdlmt::ThreadPool(attributes,
                               config.numProcessors(),           // min threads
                               config.numProcessors(),           // max threads
                               bsl::numeric_limits<int>::max(),  // idle time
