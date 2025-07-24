@@ -29,6 +29,8 @@
 #include <bdljsn_jsonutil.h>
 #include <bsls_assert.h>
 
+#include <bmqu_debugmonitor.h>
+
 namespace BloombergLP {
 namespace mqbstat {
 
@@ -136,6 +138,7 @@ struct ConversionUtils {
             bdljsn::JsonObject& queueObj =
                 (*domainObject)[queueIt->name()].makeObject();
             populateQueueStats(&queueObj, *queueIt);
+            populateDebugStats(&queueObj["values"].theObject());
 
             if (queueIt->numSubcontexts() > 0) {
                 bdljsn::JsonObject& appIdsObject =
@@ -170,6 +173,18 @@ struct ConversionUtils {
             populateOneDomainStats(&nodes[domainIt->name()].makeObject(),
                                    *domainIt);
         }
+    }
+
+    inline static void populateDebugStats(bdljsn::JsonObject* parent)
+    {
+#define POPULATE_METRIC(ENUM_VAL)                                             \
+    (*parent)[bmqu::DebugValue::toAscii(ENUM_VAL)].makeNumber() =             \
+        bmqu::DebugMonitor::update<ENUM_VAL>(0);
+
+        POPULATE_METRIC(bmqu::DebugValue::e_ROLLOVER);
+        POPULATE_METRIC(bmqu::DebugValue::e_CONSTRUCT_DISPATCHER_EVENT);
+
+#undef POPULATE_METRIC
     }
 };
 

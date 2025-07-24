@@ -184,6 +184,8 @@
 #include <bsls_timeinterval.h>
 #include <bsls_types.h>
 
+#include <bmqu_debugmonitor.h>
+
 namespace BloombergLP {
 namespace bmqc {
 
@@ -861,6 +863,9 @@ MultiQueueThreadPool<TYPE>::eventCreator(void*             arena,
     // PRECONDITIONS
     BSLS_ASSERT_SAFE(arena);
     BSLS_ASSERT_SAFE(allocator);
+
+    bmqu::DebugMonitor::update<bmqu::DebugValue::e_CONSTRUCT_DISPATCHER_EVENT>(
+        1);
 
     bslalg::ScalarPrimitives::construct(reinterpret_cast<Event*>(arena),
                                         allocator);

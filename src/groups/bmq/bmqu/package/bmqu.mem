@@ -4,6 +4,7 @@ bmqu_atomicvalidator
 bmqu_blob
 bmqu_blobiterator
 bmqu_blobobjectproxy
+bmqu_debugmonitor
 bmqu_jsonprinter
 bmqu_managedcallback
 bmqu_managedcallback_cpp03

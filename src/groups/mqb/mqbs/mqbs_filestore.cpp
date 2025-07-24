@@ -87,6 +87,8 @@
 #include <bsl_ios.h>
 #include <unistd.h>
 
+#include <bmqu_debugmonitor.h>
+
 namespace BloombergLP {
 namespace mqbs {
 
@@ -2656,6 +2658,8 @@ int FileStore::rollover(bsls::Types::Uint64 timestamp)
 
     FileSet* activeFileSet = d_fileSets[0].get();
     BSLS_ASSERT_SAFE(activeFileSet);
+
+    bmqu::DebugMonitor::update<bmqu::DebugValue::e_ROLLOVER>(1);
 
     BALL_LOG_INFO_BLOCK
     {
