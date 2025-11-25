@@ -16,8 +16,6 @@
 // bmqtst_blobtestutil.t.cpp                                          -*-C++-*-
 #include <bmqtst_blobtestutil.h>
 
-#include <bmqu_memoutstream.h>
-
 // BDE
 #include <bdlbb_blob.h>
 #include <bsl_algorithm.h>
