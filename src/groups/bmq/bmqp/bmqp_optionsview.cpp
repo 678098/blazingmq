@@ -226,42 +226,6 @@ void OptionsView::dumpBlob(bsl::ostream& stream)
 }
 
 // ACCESSORS
-int OptionsView::loadSubQueueIdsOption(
-    Protocol::SubQueueIdsArrayOld* subQueueIdsOld) const
-{
-    // PRECONDITIONS
-    BSLS_ASSERT_SAFE(subQueueIdsOld);
-    BSLS_ASSERT_SAFE(subQueueIdsOld->empty());
-    BSLS_ASSERT_SAFE(isValid());
-    BSLS_ASSERT_SAFE(find(OptionType::e_SUB_QUEUE_IDS_OLD) != end());
-
-    enum RcEnum {
-        // Value for the various RC error categories
-        rc_SUCCESS      = 0,
-        rc_LOAD_FAILURE = -1
-    };
-
-    // Read in the SubQueueIds as BigEndianUint32 and then convert them to
-    // unsigned integers.
-    bdlma::LocalSequentialAllocator<16 * sizeof(bdlb::BigEndianUint32)>
-                                       bufferedAllocator(d_allocator_p);
-    bsl::vector<bdlb::BigEndianUint32> tempVec(&bufferedAllocator);
-
-    const int rc = loadSubQueueInfosOptionHelper(
-        &tempVec,
-        Protocol::k_WORD_SIZE,
-        OptionType::e_SUB_QUEUE_IDS_OLD);
-    if (BSLS_PERFORMANCEHINT_PREDICT_UNLIKELY(rc != 0)) {
-        BSLS_PERFORMANCEHINT_UNLIKELY_HINT;
-        return rc_LOAD_FAILURE;  // RETURN
-    }
-
-    // Populate SubQueueIds
-    subQueueIdsOld->assign(tempVec.begin(), tempVec.end());
-
-    return rc_SUCCESS;
-}
-
 int OptionsView::loadSubQueueInfosOption(
     Protocol::SubQueueInfosArray* subQueueInfos) const
 {

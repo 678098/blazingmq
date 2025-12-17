@@ -48,11 +48,6 @@ BSLMF_ASSERT(OptionType::k_HIGHEST_SUPPORTED_TYPE ==
 // need to implement the processing of that particular option inside
 // 'importOptions' below.
 
-BSLMF_ASSERT(Protocol::SubQueueIdsArrayOld::static_size >= 1);
-// We want the static size of the SubQueueIdsArray to be at least one to
-// have our 'currSubQueueId' array in the 'flattenPushEvent' method not
-// allocate from the heap (that would be inefficient)
-
 // ===============
 // class Flattener
 // ===============
@@ -119,8 +114,7 @@ class Flattener {
     bmqp::SchemaLearner& d_schemaLearner;
 
     // PRIVATE TYPES
-    typedef bdlma::LocalSequentialAllocator<
-        32 * sizeof(Protocol::SubQueueIdsArrayOld::value_type)>
+    typedef bdlma::LocalSequentialAllocator<32 * sizeof(bmqp::SubQueueInfo)>
         LocalAllocator;
 
   private:

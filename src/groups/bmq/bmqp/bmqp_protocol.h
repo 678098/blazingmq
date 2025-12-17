@@ -346,19 +346,8 @@ struct Protocol {
     /// subQueueIds (or AppKeys).
     static const size_t k_SUBID_ARRAY_STATIC_LEN = 16;
 
-    /// An array of subQueueInfos with statically reserved space for a
-    /// number of subQueueInfos (as indicated by the second template
-    /// parameter).
-    typedef bmqc::Array<SubQueueInfo, k_SUBID_ARRAY_STATIC_LEN>
-        SubQueueInfosArray;
-
-    /// An array of subQueueIds with statically reserved space for a number
-    /// of subQueueIds (as indicated by the second template parameter).  It
-    /// is deprecated by the new SubQueueInfosArray above inside the
-    /// brokers, but the SDK still receives and process this older flavor
-    /// due to backward compatibility issues.
-    typedef bmqc::Array<unsigned int, k_SUBID_ARRAY_STATIC_LEN>
-        SubQueueIdsArrayOld;
+    /// An array of SubQueueInfos.
+    typedef bsl::vector<SubQueueInfo> SubQueueInfosArray;
 
     /// Holds the client-provided Group Id.
     typedef bsl::string MsgGroupId;

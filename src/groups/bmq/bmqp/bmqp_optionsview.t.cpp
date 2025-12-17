@@ -64,42 +64,6 @@ void verifySubQueueInfos(const bmqp::OptionsView&               view,
     }
 }
 
-/// Verify that the specified `view` is valid and contains the specified
-/// `subQueueIdsOld`.  Load that the `subQueueIdsOld` will be loaded as
-/// both Protocol::SubQueueInfosArray and Protocol::SubQueueIdsArrayOld to
-/// ensure that it can be decoded as both.
-void verifySubQueueIdsOld(
-    const bmqp::OptionsView&                  view,
-    const bsl::vector<bdlb::BigEndianUint32>& subQueueIdsOld)
-{
-    BMQTST_ASSERT(view.isValid());
-    BMQTST_ASSERT(view.find(bmqp::OptionType::e_SUB_QUEUE_IDS_OLD) !=
-                  view.end());
-
-    const size_t numSubQueueIds = subQueueIdsOld.size();
-
-    bmqp::Protocol::SubQueueInfosArray retrievedSubQueueInfos(
-        bmqtst::TestHelperUtil::allocator());
-    BMQTST_ASSERT_EQ(0, view.loadSubQueueInfosOption(&retrievedSubQueueInfos));
-    BMQTST_ASSERT_EQ(numSubQueueIds, retrievedSubQueueInfos.size());
-    for (size_t i = 0; i < numSubQueueIds; ++i) {
-        BMQTST_ASSERT_EQ_D(i,
-                           subQueueIdsOld[i],
-                           retrievedSubQueueInfos[i].id());
-        BMQTST_ASSERT_EQ_D(i,
-                           true,
-                           retrievedSubQueueInfos[i].rdaInfo().isUnlimited());
-    }
-
-    bmqp::Protocol::SubQueueIdsArrayOld retrievedSubQueueIdsOld(
-        bmqtst::TestHelperUtil::allocator());
-    BMQTST_ASSERT_EQ(0, view.loadSubQueueIdsOption(&retrievedSubQueueIdsOld));
-    BMQTST_ASSERT_EQ(numSubQueueIds, retrievedSubQueueIdsOld.size());
-    for (size_t i = 0; i < numSubQueueIds; ++i) {
-        BMQTST_ASSERT_EQ_D(i, subQueueIdsOld[i], retrievedSubQueueIdsOld[i]);
-    }
-}
-
 /// Populate the specified `subQueueInfos` with the specified
 /// `numSubQueueInfos` number of randomly generated pairs of sub-queue id
 /// and RDA counter.  If `numSubQueueInfos` equals 1, use default sub-queue
@@ -708,83 +672,7 @@ void test1_breathingTest()
     }
 }
 
-void test2_subQueueIdsOld()
-// ------------------------------------------------------------------------
-// SUB QUEUE IDS OLD
-//
-// Concerns:
-//   Load old version of sub-queue ids to both Protocol::SubQueueInfosArray
-//   and Protocol::SubQueueIdsArrayOld using this component.
-//
-// Plan:
-//   - Init blob and populate it via push event and three old sub-queue id
-//     option values
-//   - Create OptionView instance to observe created options
-//   - Iterate over options. Check iteration is correct
-//   - Copy to other OptionView instances and verify expected behavior
-//
-// Testing:
-//   loadSubQueueInfosOption(...)
-//   loadSubQueueIdsOption(...)
-// ------------------------------------------------------------------------
-{
-    PV(endl << "SUB QUEUE IDS OLD" << endl << "=================" << endl);
-
-    bdlbb::PooledBlobBufferFactory bufferFactory(
-        1024,
-        bmqtst::TestHelperUtil::allocator());
-
-    // Create valid view, PUSH event with 3 old sub-queue ids
-    bdlbb::Blob blob(&bufferFactory, bmqtst::TestHelperUtil::allocator());
-    bmqu::BlobPosition optionsAreaPosition;
-    int                optionsAreaSize = 0;
-
-    // Populate blob, 1 option header, multiple old sub-queue ids)
-    bsl::vector<bdlb::BigEndianUint32> subQueueIdsOld(
-        bmqtst::TestHelperUtil::allocator());
-    size_t                             numSubQueueIds = 3;
-    NullableMsgGroupId msgGroupId(bmqtst::TestHelperUtil::allocator());
-    bool                               hasMsgGroupId = false;
-
-    populateBlob(&blob,
-                 &optionsAreaPosition,
-                 &optionsAreaSize,
-                 0,
-                 &subQueueIdsOld,
-                 true,
-                 numSubQueueIds,
-                 &msgGroupId,
-                 hasMsgGroupId);
-
-    // Iterate and verify
-    bmqp::OptionsView view(&blob,
-                           optionsAreaPosition,
-                           optionsAreaSize,
-                           bmqtst::TestHelperUtil::allocator());
-    verifySubQueueIdsOld(view, subQueueIdsOld);
-
-    // Copy valid instance, iterate and verify
-    bmqp::OptionsView view2(view, bmqtst::TestHelperUtil::allocator());
-    verifySubQueueIdsOld(view2, subQueueIdsOld);
-
-    // Clear original
-    view.clear();
-    BMQTST_ASSERT_EQ(false, view.isValid());
-
-    // Verify second instance remains valid
-    verifySubQueueIdsOld(view2, subQueueIdsOld);
-
-    // Copy invalid instance (original)
-    bmqp::OptionsView view3(view, bmqtst::TestHelperUtil::allocator());
-    BMQTST_ASSERT_EQ(false, view3.isValid());
-
-    // Reset original, iterate and verify again
-    BMQTST_ASSERT_EQ(0,
-                     view.reset(&blob, optionsAreaPosition, optionsAreaSize));
-    verifySubQueueIdsOld(view, subQueueIdsOld);
-}
-
-void test3_packedOptions()
+void test2_packedOptions()
 // ------------------------------------------------------------------------
 // PACKED OPTIONS
 //
@@ -847,7 +735,7 @@ void test3_packedOptions()
     verifySubQueueInfos(view, subQueueInfos);
 }
 
-void test4_invalidOptionsArea()
+void test3_invalidOptionsArea()
 // ------------------------------------------------------------------------
 // INVALID OPTIONS AREA
 //
@@ -1194,7 +1082,7 @@ void test4_invalidOptionsArea()
     }
 }
 
-void test5_iteratorTest()
+void test4_iteratorTest()
 {
     // ------------------------------------------------------------------------
     // ITERATOR TEST TEST
@@ -1273,7 +1161,7 @@ void test5_iteratorTest()
     BMQTST_ASSERT(iter == view.end());
 }
 
-void test6_iteratorTestSubQueueIdsOld()
+void test5_iteratorTestSubQueueIdsOld()
 {
     // ------------------------------------------------------------------------
     // ITERATOR TEST TEST SUB QUEUE IDS OLD
@@ -1353,7 +1241,7 @@ void test6_iteratorTestSubQueueIdsOld()
     BMQTST_ASSERT(iter == view.end());
 }
 
-void test7_dumpBlob()
+void test6_dumpBlob()
 {
     // --------------------------------------------------------------------
     // DUMP BLOB
@@ -1444,7 +1332,7 @@ void test7_dumpBlob()
     }
 }
 
-void test8_dumpBlobSubQueueIdsOld()
+void test7_dumpBlobSubQueueIdsOld()
 {
     // --------------------------------------------------------------------
     // DUMP BLOB SUB QUEUE IDS OLD
@@ -1534,13 +1422,12 @@ int main(int argc, char* argv[])
 
     switch (_testCase) {
     case 0:
-    case 8: test8_dumpBlobSubQueueIdsOld(); break;
-    case 7: test7_dumpBlob(); break;
-    case 6: test6_iteratorTestSubQueueIdsOld(); break;
-    case 5: test5_iteratorTest(); break;
-    case 4: test4_invalidOptionsArea(); break;
-    case 3: test3_packedOptions(); break;
-    case 2: test2_subQueueIdsOld(); break;
+    case 8: test7_dumpBlobSubQueueIdsOld(); break;
+    case 7: test6_dumpBlob(); break;
+    case 6: test5_iteratorTestSubQueueIdsOld(); break;
+    case 5: test4_iteratorTest(); break;
+    case 4: test3_invalidOptionsArea(); break;
+    case 3: test2_packedOptions(); break;
     case 1: test1_breathingTest(); break;
     default: {
         cerr << "WARNING: CASE '" << _testCase << "' NOT FOUND." << endl;

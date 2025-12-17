@@ -197,59 +197,6 @@ int PushEventBuilder::reset()
     return 0;
 }
 
-bmqt::EventBuilderResult::Enum PushEventBuilder::addSubQueueIdsOption(
-    const Protocol::SubQueueIdsArrayOld& subQueueIds)
-{
-    // PRECONDITIONS
-    BSLA_MAYBE_UNUSED const int optionsSize = d_options.size();
-    BSLS_ASSERT_SAFE((optionsSize > 0 && d_currPushHeader.isSet()) ||
-                     (optionsSize == 0 && !d_currPushHeader.isSet()));
-
-    typedef bmqt::EventBuilderResult Result;
-    typedef OptionUtil::OptionMeta   OptionMeta;
-
-    const unsigned int numSubQueueIds = subQueueIds.size();
-
-    // We do not write an OptionHeader when there is no option payload
-    if (numSubQueueIds == 0) {
-        return bmqt::EventBuilderResult::e_SUCCESS;  // RETURN
-    }
-
-    const int  currentSize = eventSize() + sizeof(PushHeader);
-    const int  size        = numSubQueueIds * Protocol::k_WORD_SIZE;
-    OptionMeta option = OptionMeta::forOption(OptionType::e_SUB_QUEUE_IDS_OLD,
-                                              size);
-
-    const Result::Enum rc = d_options.canAdd(currentSize, option);
-    if (BSLS_PERFORMANCEHINT_PREDICT_UNLIKELY(rc != Result::e_SUCCESS)) {
-        BSLS_PERFORMANCEHINT_UNLIKELY_HINT;
-        eraseCurrentMessage();
-        return rc;  // RETURN
-    }
-
-    // Make sure PushHeader is written for current message
-    ensurePushHeader();
-
-    // We need to convert the SubQueueIds to a vector of BigEndianUint32 and
-    // then write them to the blob.
-    bdlma::LocalSequentialAllocator<16 * sizeof(unsigned int)> lsa(
-        d_allocator_p);
-    bsl::vector<bdlb::BigEndianUint32> tempVec(&lsa);
-    tempVec.reserve(numSubQueueIds);
-
-    bsl::transform(subQueueIds.begin(),
-                   subQueueIds.end(),
-                   bsl::back_inserter(tempVec),
-                   bdlb::BigEndianUint32::make);
-
-    // TODO_POISON_PILL Make sure that adding *packed* option also works
-    d_options.add(d_blob_sp.get(),
-                  reinterpret_cast<const char*>(tempVec.data()),
-                  option);
-
-    return bmqt::EventBuilderResult::e_SUCCESS;
-}
-
 bmqt::EventBuilderResult::Enum PushEventBuilder::addSubQueueInfosOption(
     const Protocol::SubQueueInfosArray& subQueueInfos,
     bool                                packRdaCounter)

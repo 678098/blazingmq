@@ -286,10 +286,7 @@ static void test1_breathingTest()
     const bmqt::MessageGUID guid;
     const char*             buffer = "abcdefghijklmnopqrstuvwxyz";
     const int               flags  = 0;
-    const int               numSubQueueInfos =
-        bmqp::Protocol::SubQueueInfosArray::static_size + 4;
-    // Use a value for 'numSubQueueInfos' which extends beyond 'static' part of
-    // the 'SubQueueInfosArray'.
+    const int               numSubQueueInfos = 32;
 
     bdlbb::Blob payload(&bufferFactory, bmqtst::TestHelperUtil::allocator());
     bdlbb::BlobUtil::append(&payload, buffer, bsl::strlen(buffer));
@@ -414,10 +411,7 @@ static void test2_buildEventBackwardsCompatibility()
     const bmqt::MessageGUID guid;
     const char*             buffer = "abcdefghijklmnopqrstuvwxyz";
     const int               flags  = 0;
-    const int               numSubQueueInfos =
-        bmqp::Protocol::SubQueueInfosArray::static_size + 4;
-    // Use a value for 'numSubQueueInfos' which extends beyond 'static' part of
-    // the 'SubQueueInfosArray'.
+    const int               numSubQueueInfos = 32;
 
     bdlbb::Blob payload(&bufferFactory, bmqtst::TestHelperUtil::allocator());
     bdlbb::BlobUtil::append(&payload, buffer, bsl::strlen(buffer));
@@ -782,9 +776,7 @@ static void test5_buildEventWithPayloadTooBig()
     bmqp::Protocol::SubQueueInfosArray subQueueInfos(
         bmqtst::TestHelperUtil::allocator());
     const int queueId    = 4321;
-    int numSubQueueInfos = bmqp::Protocol::SubQueueInfosArray::static_size + 4;
-    // Use a value for 'numSubQueueInfos' which extends beyond 'static' part of
-    // the 'SubQueueInfosArray'.
+    int       numSubQueueInfos = 32;
     int       payloadLen = 0;
     const int flags      = 0;
 

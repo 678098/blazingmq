@@ -214,13 +214,6 @@ class PushEventBuilder {
     bmqt::EventBuilderResult::Enum packMessage(const bdlbb::Blob& payload,
                                                const PushHeader&  header);
 
-    /// Add a SubQueueId option having the specified `subQueueIds` to the
-    /// current (to-be-packed) message in the event being built.  Return 0
-    /// on success, or a meaningful non-zero error code otherwise.  In case
-    /// of failure, this method has no effect on the underlying event blob.
-    bmqt::EventBuilderResult::Enum
-    addSubQueueIdsOption(const Protocol::SubQueueIdsArrayOld& subQueueIds);
-
     /// Add a SubQueueInfo option having the specified `subQueueInfos` to
     /// the current (to-be-packed) message in the event being built.  If the
     /// specified `packRdaCounter` is true, also pack the remaining delivery

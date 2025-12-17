@@ -179,8 +179,7 @@ static void test2_validPushMessagePrint()
     const bmqt::MessageGUID guid;
     const char*             buffer = "abcdefghijklmnopqrstuvwxyz";
     const int               flags  = 0;
-    const size_t            numSubQueueInfos =
-        bmqp::Protocol::SubQueueInfosArray::static_size + 4;
+    const size_t            numSubQueueInfos = 32;
 
     bmqp::Protocol::SubQueueInfosArray subQueueInfos(
         bmqtst::TestHelperUtil::allocator());

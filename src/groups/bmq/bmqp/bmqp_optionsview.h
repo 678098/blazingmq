@@ -281,15 +281,6 @@ class OptionsView {
     /// Behavior is undefined unless `isValid` returns `true`.
     const_iterator find(bmqp::OptionType::Enum optionType) const;
 
-    /// Load into the specified `subQueueIdsOld` the sub-queue ids
-    /// associated with the options pointed to by this view.  Return zero on
-    /// success, and a non-zero value otherwise.  Behavior is undefined
-    /// unless `subQueueIdsOld` is empty, `isValid()` returns true and
-    /// `find(bmqp::OptionType::Enum::e_SUB_QUEUE_IDS_OLD)` returns a valid
-    /// iterator.
-    int
-    loadSubQueueIdsOption(Protocol::SubQueueIdsArrayOld* subQueueIdsOld) const;
-
     /// Load into the specified `subQueueInfos` the sub-queue infos
     /// associated with the options pointed to by this view.  Return zero on
     /// success, and a non-zero value otherwise.  Behavior is undefined

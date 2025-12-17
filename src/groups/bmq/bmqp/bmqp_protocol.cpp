@@ -70,11 +70,6 @@ BSLMF_ASSERT(PushHeader::k_MAX_PAYLOAD_SIZE_SOFT ==
 BSLMF_ASSERT(RecoveryHeader::k_MAX_PAYLOAD_SIZE_SOFT <=
              RecoveryHeader::k_MAX_SIZE);
 
-BSLMF_ASSERT(Protocol::SubQueueInfosArray::static_size ==
-             Protocol::k_SUBID_ARRAY_STATIC_LEN);
-// Ensure that the static size of a subQueueInfos array is as defined in
-// the designated constant
-
 }  // close unnamed namespace
 
 // ==============
