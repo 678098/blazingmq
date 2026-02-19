@@ -18,6 +18,7 @@
 
 // MQB
 #include <mqbcfg_messages.h>
+#include <mqbi_dispatcher.h>
 #include <mqbmock_dispatcher.h>
 
 #include <bmqex_bindutil.h>
@@ -28,13 +29,15 @@
 
 // BDE
 #include <bdlf_bind.h>
+#include <bdlma_localsequentialallocator.h>
 #include <bdlmt_eventscheduler.h>
+#include <bsl_iomanip.h>
 #include <bsl_sstream.h>
 #include <bslmt_semaphore.h>
 #include <bslmt_threadutil.h>
 #include <bsls_assert.h>
+#include <bsls_stopwatch.h>
 #include <bsls_systemclocktype.h>
-#include <bsls_timeutil.h>
 
 // TEST DRIVER
 #include <bmqtst_testhelper.h>
@@ -629,6 +632,73 @@ static void testN1_inDispatcherThread()
     eventScheduler.stop();
 }
 
+static void testN2_dispatcherEventBenchmark()
+// ------------------------------------------------------------------------
+// DISPATCHER EVENT BENCHMARK
+//
+// Concerns:
+//   Measure the performance characteristics of mqbi::DispatcherEvent:
+//   - Memory footprint
+//   - Construction time
+//   - Reset time
+//
+// Testing:
+//   - sizeof mqbi::DispatcherEvent
+//   - Construction performance
+//   - Reset performance
+// ------------------------------------------------------------------------
+{
+    bmqtst::TestHelper::printTestName("DISPATCHER EVENT BENCHMARK");
+
+    const int w = 25;
+
+    cout << bsl::left << bsl::setw(w) << "Name" << bsl::setw(w) << "sizeof"
+         << bsl::setw(w) << "constructor, ns/op" << bsl::setw(w)
+         << "reset, ns/op" << endl;
+
+    cout << bsl::setfill('-') << bsl::setw(w * 4) << "" << bsl::setfill(' ')
+         << endl;
+
+    cout << bsl::left << bsl::setw(w) << "mqbi::DispatcherEvent"
+         << bsl::setw(w) << sizeof(mqbi::DispatcherEvent);
+
+    static const int k_BENCHMARK_ITERATIONS = 100000;
+
+    // Construction time
+    {
+        bdlma::LocalSequentialAllocator<1024> lsa(bmqtst::TestHelperUtil::allocator());
+        bsls::Stopwatch                       stopwatch;
+        stopwatch.reset();
+        stopwatch.start();
+        for (int i = 0; i < k_BENCHMARK_ITERATIONS; ++i) {
+            mqbi::DispatcherEvent event(&lsa);
+            (void)event;
+        }
+        stopwatch.stop();
+        cout << bsl::setw(w)
+             << stopwatch.elapsedTime() / k_BENCHMARK_ITERATIONS * 1e9;
+    }
+
+    // Reset time
+    {
+        bdlma::LocalSequentialAllocator<1024> lsa(bmqtst::TestHelperUtil::allocator());
+        bsls::Stopwatch                       stopwatch;
+        stopwatch.reset();
+        stopwatch.start();
+        {
+            mqbi::DispatcherEvent event(&lsa);
+            for (int i = 0; i < k_BENCHMARK_ITERATIONS; ++i) {
+                event.reset();
+            }
+        }
+        stopwatch.stop();
+        cout << bsl::setw(w)
+             << stopwatch.elapsedTime() / k_BENCHMARK_ITERATIONS * 1e9;
+    }
+
+    cout << endl;
+}
+
 // ============================================================================
 //                                 MAIN PROGRAM
 // ----------------------------------------------------------------------------
@@ -646,6 +716,7 @@ int main(int argc, char* argv[])
     case 2: test2_clientTypeEnumValues(); break;
     case 1: test1_breathingTest(); break;
     case -1: testN1_inDispatcherThread(); break;
+    case -2: testN2_dispatcherEventBenchmark(); break;
     default: {
         cerr << "WARNING: CASE '" << _testCase << "' NOT FOUND." << endl;
         bmqtst::TestHelperUtil::testStatus() = -1;
