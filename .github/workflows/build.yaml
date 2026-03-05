@@ -6,7 +6,7 @@ on:
       - main
   pull_request:
     branches:
-      - main
+      - test260304
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
