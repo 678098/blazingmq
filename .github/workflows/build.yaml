@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build_and_test:
-    name: "Check if BlazingMQ can build and pass unit tests"
+    name: "Build & UT"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
