@@ -116,7 +116,7 @@ const int k_BLOB_POOL_GROWTH_STRATEGY = 1024;
 
 int calculateInitialMissedHbCounter(const mqbcfg::TcpInterfaceConfig& config)
 {
-    // Calculate the value with which 'ChannelInfo.d_missedHeartbeatCounter'
+    // Calculate the value with which 'ChannelHandler.d_missedHeartbeatCounter'
     // should be initialized when a channel is established.  We want to give
     // the peer a grace of 3 minutes before we take into account peer's
     // heartbeats.  This is needed so that if the peer is just starting up and
@@ -390,7 +390,7 @@ void TCPSessionFactory::handleInitialConnection(
 void TCPSessionFactory::readCallback(const bmqio::Status& status,
                                      int*                 numNeeded,
                                      bdlbb::Blob*         blob,
-                                     ChannelInfo*         channelInfo)
+                                     ChannelHandler*      channelInfo)
 {
     // executed by one of the *IO* threads
 
@@ -455,7 +455,7 @@ void TCPSessionFactory::readCallback(const bmqio::Status& status,
     }
 }
 
-void TCPSessionFactory::read(ChannelInfo*       channelInfo,
+void TCPSessionFactory::read(ChannelHandler*    channelInfo,
                              const bdlbb::Blob& source,
                              int                offset,
                              int                length)
@@ -579,7 +579,7 @@ void TCPSessionFactory::initialConnectionComplete(
                              bdlf::PlaceHolders::_1,  // ptr
                              rawSession.second));     // rep
 
-    ChannelInfoSp                         info;
+    ChannelHandlerSp                      info;
     bsl::pair<ChannelMap::iterator, bool> inserted;
 
     {
@@ -616,8 +616,8 @@ void TCPSessionFactory::initialConnectionComplete(
             d_initialMissedHeartbeatCounter);
         // See comments in 'calculateInitialMissedHbCounter'.
 
-        bsl::pair<bmqio::Channel*, ChannelInfoSp> toInsert(channel.get(),
-                                                           info);
+        bsl::pair<bmqio::Channel*, ChannelHandlerSp> toInsert(channel.get(),
+                                                              info);
         inserted = d_channels.insert(toInsert);
         info     = inserted.first->second;
 
@@ -796,7 +796,7 @@ void TCPSessionFactory::onClose(const bsl::shared_ptr<bmqio::Channel>& channel,
         &port,
         TCPSessionFactory::k_CHANNEL_PROPERTY_LOCAL_PORT);
 
-    ChannelInfoSp channelInfo;
+    ChannelHandlerSp channelInfo;
     {
         // Lookup the session and remove it from internal map
         bslmt::LockGuard<bslmt::Mutex> guard(&d_mutex);  // LOCK
@@ -878,7 +878,7 @@ void TCPSessionFactory::onHeartbeatSchedulerEvent()
 
     for (ChannelMap::const_iterator it = d_heartbeatChannels.begin();
          it != d_heartbeatChannels.end();) {
-        ChannelInfo* info = it->second.get();
+        ChannelHandler* info = it->second.get();
         if (!info->d_monitor.checkHeartbeat(info->d_channel_sp.get())) {
             const Session* session = info->d_session_sp.get();
             BSLS_ASSERT_SAFE(session);
@@ -904,7 +904,7 @@ void TCPSessionFactory::onHeartbeatSchedulerEvent()
 }
 
 void TCPSessionFactory::enableHeartbeat(
-    const bsl::shared_ptr<ChannelInfo>& channelInfo_sp)
+    const bsl::shared_ptr<ChannelHandler>& channelInfo_sp)
 {
     // executed by the *SCHEDULER* thread
 
@@ -921,7 +921,7 @@ void TCPSessionFactory::disableHeartbeat(const bmqio::Channel* channel_p)
         // The `channel_p` have been removed as DEAD
         return;  // RETURN
     }
-    const bsl::shared_ptr<ChannelInfo>& channelInfo_sp = cit->second;
+    const bsl::shared_ptr<ChannelHandler>& channelInfo_sp = cit->second;
 
     BSLS_ASSERT_SAFE(channelInfo_sp);
     BSLS_ASSERT_SAFE(channelInfo_sp->d_session_sp);
@@ -977,8 +977,8 @@ int TCPSessionFactory::validateTcpInterfaces() const
 }
 
 void TCPSessionFactory::reauthnOnAuthenticationEvent(
-    const bmqp::Event& event,
-    const ChannelInfo* channelInfo) const
+    const bmqp::Event&    event,
+    const ChannelHandler* channelInfo) const
 {
     // executed by the *IO* thread
 
@@ -1428,8 +1428,8 @@ void TCPSessionFactory::stop()
                                            d_self.acquireWeak()));
 
         // No need to wait for 'stopHeartbeats' because 'd_heartbeatChannels'
-        // keep counted reference to sessions ('ChannelInfo::d_session_sp') and
-        // the code below waits for sessions destruction.
+        // keep counted reference to sessions ('ChannelHandler::d_session_sp')
+        // and the code below waits for sessions destruction.
     }
 
     if (d_nbSessions != 0) {
@@ -1648,10 +1648,10 @@ bool TCPSessionFactory::isEndpointLoopback(const bslstl::StringRef& uri) const
 }
 
 // ------------------------------------
-// class TCPSessionFactory::ChannelInfo
+// class TCPSessionFactory::ChannelHandler
 // ------------------------------------
 
-TCPSessionFactory::ChannelInfo::ChannelInfo(
+TCPSessionFactory::ChannelHandler::ChannelHandler(
     const bsl::shared_ptr<bmqio::Channel>&        channel_sp,
     const bsl::shared_ptr<AuthenticationContext>& authenticationContext,
     const bsl::shared_ptr<Session>&               monitoredSession,

@@ -179,7 +179,7 @@ class TCPSessionFactory {
 
     /// A view into a an active channel, its session, event processor, and
     /// heartbeat monitor.
-    struct ChannelInfo {
+    struct ChannelHandler {
         /// The channel
         bsl::shared_ptr<bmqio::Channel> d_channel_sp;
 
@@ -204,13 +204,14 @@ class TCPSessionFactory {
         /// missed heartbeats on this channel.
         /// @param initialMissedHeartbeatCounter The initial missed heartbeats
         /// for this channel.
-        explicit ChannelInfo(const bsl::shared_ptr<bmqio::Channel>& channel_sp,
-                             const bsl::shared_ptr<AuthenticationContext>&
-                                 authenticationContext,
-                             const bsl::shared_ptr<Session>& session,
-                             SessionEventProcessor*          eventProcessor,
-                             int maxMissedHeartbeats,
-                             int initialMissedHeartbeatCounter);
+        explicit ChannelHandler(
+            const bsl::shared_ptr<bmqio::Channel>& channel_sp,
+            const bsl::shared_ptr<AuthenticationContext>&
+                                            authenticationContext,
+            const bsl::shared_ptr<Session>& session,
+            SessionEventProcessor*          eventProcessor,
+            int                             maxMissedHeartbeats,
+            int                             initialMissedHeartbeatCounter);
     };
 
     /// This class provides mechanism to store a map of port stat contexts.
@@ -253,9 +254,9 @@ class TCPSessionFactory {
 
     struct Reader {
         TCPSessionFactory* d_owner_p;
-        ChannelInfo*       d_channelInfo_p;
+        ChannelHandler*    d_channelInfo_p;
 
-        explicit Reader(TCPSessionFactory* owner, ChannelInfo* channelInfo)
+        explicit Reader(TCPSessionFactory* owner, ChannelHandler* channelInfo)
         : d_owner_p(owner)
         , d_channelInfo_p(channelInfo)
         {
@@ -268,11 +269,11 @@ class TCPSessionFactory {
         }
     };
 
-    typedef bsl::shared_ptr<ChannelInfo> ChannelInfoSp;
+    typedef bsl::shared_ptr<ChannelHandler> ChannelHandlerSp;
 
-    /// Map associating a `Channel` to its corresponding `ChannelInfo` (as
+    /// Map associating a `Channel` to its corresponding `ChannelHandler` (as
     /// shared_ptr because of the atomicInt which has no copy constructor).
-    typedef bsl::unordered_map<const bmqio::Channel*, ChannelInfoSp>
+    typedef bsl::unordered_map<const bmqio::Channel*, ChannelHandlerSp>
         ChannelMap;
 
     /// Shortcut for a managedPtr to the `bmqio::TCPChannelFactory`
@@ -393,7 +394,7 @@ class TCPSessionFactory {
     /// the event scheduler thread.
     ChannelMap d_heartbeatChannels;
 
-    /// Value for initializing `ChannelInfo.d_missedHeartbeatCounter`.  See
+    /// Value for initializing `ChannelHandler.d_missedHeartbeatCounter`.  See
     /// comments in `calculateInitialMissedHbCounter`.
     const int d_initialMissedHeartbeatCounter;
 
@@ -447,9 +448,9 @@ class TCPSessionFactory {
     void readCallback(const bmqio::Status& status,
                       int*                 numNeeded,
                       bdlbb::Blob*         blob,
-                      ChannelInfo*         channelInfo);
+                      ChannelHandler*      channelInfo);
 
-    void read(ChannelInfo*       channelInfo,
+    void read(ChannelHandler*    channelInfo,
               const bdlbb::Blob& source,
               int                offset,
               int                length);
@@ -509,7 +510,7 @@ class TCPSessionFactory {
 
     /// Enable heartbeat for the channel represented by the specified
     /// `channelInfo`.
-    void enableHeartbeat(const bsl::shared_ptr<ChannelInfo>& channelInfo);
+    void enableHeartbeat(const bsl::shared_ptr<ChannelHandler>& channelInfo);
 
     /// Disable heartbeat for the channel represented by the specified
     /// `channel_p`.
@@ -542,8 +543,8 @@ class TCPSessionFactory {
     /// Handle an authentication event for the specified `event` by
     /// performing reauthentication using the authentication context stored
     /// in the specified `channelInfo`.
-    void reauthnOnAuthenticationEvent(const bmqp::Event& event,
-                                      const ChannelInfo* channelInfo) const;
+    void reauthnOnAuthenticationEvent(const bmqp::Event&    event,
+                                      const ChannelHandler* channelInfo) const;
 
   private:
     // NOT IMPLEMENTED
