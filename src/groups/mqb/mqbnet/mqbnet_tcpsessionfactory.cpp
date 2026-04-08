@@ -436,9 +436,7 @@ void TCPSessionFactory::readCallback(const bmqio::Status& status,
         return;  // RETURN
     }
 
-    Reader reader(this, channelInfo);
-
-    const int rc = bmqio::ChannelUtil::handleRead(reader, numNeeded, blob);
+    const int rc = bmqio::ChannelUtil::handleRead(channelInfo->d_reader, numNeeded, blob);
 
     if (BSLS_PERFORMANCEHINT_PREDICT_UNLIKELY(rc != 0)) {
         BSLS_PERFORMANCEHINT_UNLIKELY_HINT;
@@ -455,18 +453,17 @@ void TCPSessionFactory::readCallback(const bmqio::Status& status,
     }
 }
 
-void TCPSessionFactory::read(ChannelHandler*    channelInfo,
-                             const bdlbb::Blob& source,
-                             int                offset,
-                             int                length)
+void TCPSessionFactory::ChannelHandler::read(const bdlbb::Blob& source,
+                                             int                offset,
+                                             int                length)
 {
     // executed by one of the *IO* threads
 
-    const bsl::shared_ptr<bdlbb::Blob> readBlob = d_blobSpPool.getObject();
+    const bsl::shared_ptr<bdlbb::Blob> readBlob = d_blobSpPool_sp->getObject();
 
     bdlbb::BlobUtil::append(readBlob.get(), source, offset, length);
 
-    BALL_LOG_TRACE << channelInfo->d_session_sp->description()
+    BALL_LOG_TRACE << d_session_sp->description()
                    << ": ReadCallback got a blob\n"
                    << bmqu::BlobStartHexDumper(readBlob.get());
 
@@ -477,21 +474,19 @@ void TCPSessionFactory::read(ChannelHandler*    channelInfo,
         BSLS_PERFORMANCEHINT_UNLIKELY_HINT;
 
         BALL_LOG_ERROR << "#TCP_INVALID_PACKET "
-                       << channelInfo->d_session_sp->description()
+                       << d_session_sp->description()
                        << ": Received an invalid packet:\n"
                        << bmqu::BlobStartHexDumper(readBlob.get());
         return;  // RETURN
     }
 
-    if (channelInfo->d_monitor.checkData(channelInfo->d_channel_sp.get(),
-                                         event)) {
+    if (d_monitor.checkData(d_channel_sp.get(), event)) {
         if (event.isAuthenticationEvent()) {
-            reauthnOnAuthenticationEvent(event, channelInfo);
+            reauthnOnAuthenticationEvent(event);
         }
         else {
-            channelInfo->d_eventProcessor_p->processEvent(
-                event,
-                channelInfo->d_session_sp->clusterNode());
+            d_eventProcessor_p->processEvent(
+                event, d_session_sp->clusterNode());
         }
     }
 }
@@ -607,13 +602,16 @@ void TCPSessionFactory::initialConnectionComplete(
         info.createInplace(
             d_allocator_p,
             channel,
+            d_blobSpPool_sp,
             initialConnectionContext_sp->authenticationContext(),
             monitoredSession,
+            d_authenticator_p,
             initialConnectionContext_sp->negotiationContext()
                 ->eventProcessor(),
             initialConnectionContext_sp->negotiationContext()
                 ->maxMissedHeartbeats(),
-            d_initialMissedHeartbeatCounter);
+            d_initialMissedHeartbeatCounter,
+            d_allocator_p);
         // See comments in 'calculateInitialMissedHbCounter'.
 
         bsl::pair<bmqio::Channel*, ChannelHandlerSp> toInsert(channel.get(),
@@ -976,23 +974,20 @@ int TCPSessionFactory::validateTcpInterfaces() const
     return validator(d_config);
 }
 
-void TCPSessionFactory::reauthnOnAuthenticationEvent(
-    const bmqp::Event&    event,
-    const ChannelHandler* channelInfo) const
+void TCPSessionFactory::ChannelHandler::reauthnOnAuthenticationEvent(
+    const bmqp::Event&    event) const
 {
     // executed by the *IO* thread
 
     // PRECONDITIONS
-    BSLS_ASSERT_SAFE(channelInfo);
-    BSLS_ASSERT_SAFE(channelInfo->d_authenticationCtx_sp);
-    BSLS_ASSERT_SAFE(channelInfo->d_session_sp);
+    BSLS_ASSERT_SAFE(d_authenticationCtx_sp);
+    BSLS_ASSERT_SAFE(d_session_sp);
 
     const bsl::shared_ptr<AuthenticationContext>& context =
-        channelInfo->d_authenticationCtx_sp;
-    const bsl::string& description = channelInfo->d_session_sp->description();
-    bmqu::MemOutStream errStream(d_allocator_p);
+        d_authenticationCtx_sp;
+    const bsl::string& description = d_session_sp->description();
 
-    bmqp_ctrlmsg::AuthenticationMessage authenticationMessage;
+    bmqp_ctrlmsg::AuthenticationMessage authenticationMessage(d_allocator_p);
     int rc = event.loadAuthenticationEvent(&authenticationMessage);
     if (rc != 0) {
         BALL_LOG_ERROR << "#CORRUPTED_EVENT " << description
@@ -1019,18 +1014,19 @@ void TCPSessionFactory::reauthnOnAuthenticationEvent(
         return;  // RETURN
     }
 
-    bmqu::MemOutStream errorStream;
+    bmqu::MemOutStream errorStream(d_allocator_p);
     rc = d_authenticator_p->handleReauthentication(errorStream,
                                                    context,
-                                                   channelInfo->d_channel_sp);
+                                                   d_channel_sp);
     if (rc != 0) {
+        bmqu::MemOutStream errStream(d_allocator_p);
         errStream << "#AUTHENTICATION_FAILED " << description
                   << ": Authentication failed [reason: '" << errorStream.str()
                   << "', rc: " << rc << "]";
         context->onReauthenticateErrorOrTimeout(rc,
                                                 "reauthenticationError",
                                                 errStream.str(),
-                                                channelInfo->d_channel_sp);
+                                                d_channel_sp);
         return;  // RETURN
     }
 }
@@ -1048,7 +1044,7 @@ TCPSessionFactory::TCPSessionFactory(
 , d_config(config, allocator)
 , d_scheduler_p(scheduler)
 , d_blobBufferFactory_p(blobBufferFactory)
-, d_blobSpPool(k_BLOB_POOL_GROWTH_STRATEGY, allocator)
+, d_blobSpPool_sp(bsl::allocate_shared<bmqp::BlobPoolUtil::BlobSpPool>(allocator, k_BLOB_POOL_GROWTH_STRATEGY))
 , d_authenticator_p(authenticator)
 , d_negotiator_p(negotiator)
 , d_statController_p(statController)
@@ -1653,16 +1649,23 @@ bool TCPSessionFactory::isEndpointLoopback(const bslstl::StringRef& uri) const
 
 TCPSessionFactory::ChannelHandler::ChannelHandler(
     const bsl::shared_ptr<bmqio::Channel>&        channel_sp,
+    const bmqp::BlobPoolUtil::BlobSpPoolSp &blobSpPool_sp,
     const bsl::shared_ptr<AuthenticationContext>& authenticationContext,
     const bsl::shared_ptr<Session>&               monitoredSession,
+    Authenticator*                                authenticator_p,
     SessionEventProcessor*                        eventProcessor,
     int                                           maxMissedHeartbeats,
-    int initialMissedHeartbeatCounter)
-: d_channel_sp(channel_sp)
-, d_authenticationCtx_sp(authenticationContext)
-, d_session_sp(monitoredSession)
+    int initialMissedHeartbeatCounter,
+    bslma::Allocator *allocator_p)
+: d_allocator_p(allocator_p)
 , d_eventProcessor_p(eventProcessor)
+, d_channel_sp(channel_sp)
+, d_blobSpPool_sp(blobSpPool_sp)
 , d_monitor(maxMissedHeartbeats, initialMissedHeartbeatCounter)
+, d_reader(Reader(this))
+, d_session_sp(monitoredSession)
+, d_authenticationCtx_sp(authenticationContext)
+, d_authenticator_p(authenticator_p)
 {
     if (!d_eventProcessor_p) {
         // No eventProcessor was provided default to the negotiated session

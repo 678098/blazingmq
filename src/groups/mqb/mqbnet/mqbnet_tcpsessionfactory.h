@@ -77,6 +77,9 @@
 // 'heartbeatInterval' value of 3s, and a 'maxMissedHeartbeat' value of 4,
 // stale connection will be dropped after a time of ']12;16]' seconds.
 
+// BMQ
+#include <bmqp_blobpoolutil.h>
+
 // MQB
 #include <mqbcfg_messages.h>
 #include <mqbnet_initialconnectioncontext.h>
@@ -180,19 +183,49 @@ class TCPSessionFactory {
     /// A view into a an active channel, its session, event processor, and
     /// heartbeat monitor.
     struct ChannelHandler {
-        /// The channel
-        bsl::shared_ptr<bmqio::Channel> d_channel_sp;
+        BSLMF_NESTED_TRAIT_DECLARATION(ChannelHandler,
+                                       bslma::UsesBslmaAllocator)
 
-        // The context of authentication
-        bsl::shared_ptr<AuthenticationContext> d_authenticationCtx_sp;
+        struct Reader {
+            ChannelHandler* d_owner_p;
 
-        /// The session tied to the channel
-        bsl::shared_ptr<Session> d_session_sp;
+            explicit Reader(ChannelHandler* owner)
+            : d_owner_p(owner)
+            {
+                // PRECONDITIONS
+                BSLS_ASSERT_SAFE(d_owner_p);
+            }
+
+            void operator()(const bdlbb::Blob& source, int offset, int length)
+            {
+                d_owner_p->read(source, offset, length);
+            }
+        };
+
+        /// Allocator
+        bslma::Allocator *d_allocator_p;
 
         /// The event processor of Events received on this channel.
         SessionEventProcessor* d_eventProcessor_p;
 
+        /// The channel
+        bsl::shared_ptr<bmqio::Channel> d_channel_sp;
+
+        bmqp::BlobPoolUtil::BlobSpPoolSp d_blobSpPool_sp;
+
         bmqp::HeartbeatMonitor d_monitor;
+
+        bsl::function<
+        void(const bdlbb::Blob& source, int offset, int length)> d_reader;
+
+        /// The session tied to the channel
+        bsl::shared_ptr<Session> d_session_sp;
+
+        // The context of authentication
+        bsl::shared_ptr<AuthenticationContext> d_authenticationCtx_sp;
+
+        /// Authenticator to use for authentication
+        Authenticator* d_authenticator_p;
 
         /// @param channel_sp The channel
         /// @param authenticationContext The authentication context associated
@@ -206,12 +239,25 @@ class TCPSessionFactory {
         /// for this channel.
         explicit ChannelHandler(
             const bsl::shared_ptr<bmqio::Channel>& channel_sp,
+            const bmqp::BlobPoolUtil::BlobSpPoolSp& blobSpPool_sp,
             const bsl::shared_ptr<AuthenticationContext>&
                                             authenticationContext,
             const bsl::shared_ptr<Session>& session,
-            SessionEventProcessor*          eventProcessor,
+            Authenticator*                  authenticator_p,
+            SessionEventProcessor*          eventProcessor_p,
             int                             maxMissedHeartbeats,
-            int                             initialMissedHeartbeatCounter);
+            int                             initialMissedHeartbeatCounter,
+            bslma::Allocator *allocator_p = 0);
+
+
+        void read(const bdlbb::Blob& source,
+                  int                offset,
+                  int                length);
+
+
+        /// Handle an authentication event for the specified `event` by
+        /// performing reauthentication.
+        void reauthnOnAuthenticationEvent(const bmqp::Event& event) const;
     };
 
     /// This class provides mechanism to store a map of port stat contexts.
@@ -250,23 +296,6 @@ class TCPSessionFactory {
         /// Handle the deletion of a StatContext associated with a channel
         /// connected to the specified 'port'.
         void onDeleteChannelContext(bsl::uint16_t port);
-    };
-
-    struct Reader {
-        TCPSessionFactory* d_owner_p;
-        ChannelHandler*    d_channelInfo_p;
-
-        explicit Reader(TCPSessionFactory* owner, ChannelHandler* channelInfo)
-        : d_owner_p(owner)
-        , d_channelInfo_p(channelInfo)
-        {
-            BSLS_ASSERT_SAFE(owner);
-        }
-
-        void operator()(const bdlbb::Blob& blob, int offset, int length)
-        {
-            d_owner_p->read(d_channelInfo_p, blob, offset, length);
-        }
     };
 
     typedef bsl::shared_ptr<ChannelHandler> ChannelHandlerSp;
@@ -318,10 +347,7 @@ class TCPSessionFactory {
     /// BlobBuffer factory to use (passed to the ChannelFactory)
     bdlbb::BlobBufferFactory* d_blobBufferFactory_p;
 
-    bdlcc::SharedObjectPool<bdlbb::Blob,
-                            bdlcc::ObjectPoolFunctors::DefaultCreator,
-                            bdlcc::ObjectPoolFunctors::RemoveAll<bdlbb::Blob> >
-        d_blobSpPool;
+    bmqp::BlobPoolUtil::BlobSpPoolSp d_blobSpPool_sp;
 
     /// Authenticator to use for authentication
     Authenticator* d_authenticator_p;
@@ -450,11 +476,6 @@ class TCPSessionFactory {
                       bdlbb::Blob*         blob,
                       ChannelHandler*      channelInfo);
 
-    void read(ChannelHandler*    channelInfo,
-              const bdlbb::Blob& source,
-              int                offset,
-              int                length);
-
     /// Method invoked when the initial connection (including authentication
     /// and negotiation) of the specified `channel` is complete, whether it be
     /// success or failure.  The specified `userData` is the `OperationContext`
@@ -539,12 +560,6 @@ class TCPSessionFactory {
     ///
     /// @returns 0 on success, nonzero on failure.
     int validateTcpInterfaces() const;
-
-    /// Handle an authentication event for the specified `event` by
-    /// performing reauthentication using the authentication context stored
-    /// in the specified `channelInfo`.
-    void reauthnOnAuthenticationEvent(const bmqp::Event&    event,
-                                      const ChannelHandler* channelInfo) const;
 
   private:
     // NOT IMPLEMENTED
