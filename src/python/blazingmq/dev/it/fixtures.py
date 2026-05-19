@@ -307,17 +307,20 @@ def cluster_fixture(request, configure) -> Iterator[Cluster]:
                 check_sequential_tests()
                 logger.info("using ports sequentially allocated from %s", env_port_base)
                 port_allocator = itertools.count(int(env_port_base))
-            elif sys.platform == "darwin":
-                logger.info("allocating ephemeral ports using macOS port allocator")
-                port_allocator = reserve_port_pool()
-            else:
-                logger.info("allocating ephemeral ports")
+            elif sys.platform == "linux":
+                logger.info("[linux] allocating ephemeral ports")
 
                 def ephemeral_port_allocator():
                     while True:
                         yield port_scope.enter_context(reserve_port()).port
 
                 port_allocator = ephemeral_port_allocator()
+            else:
+                logger.info(
+                    "[%s] allocating ephemeral ports using pool port allocator",
+                    sys.platform,
+                )
+                port_allocator = reserve_port_pool()
 
             extra_cluster_kw_args = {}
 
