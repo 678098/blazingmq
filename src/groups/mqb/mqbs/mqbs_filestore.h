@@ -101,6 +101,7 @@ class PartitionStats;
 namespace mqbs {
 
 // FORWARD DECLARATIONS
+class BufferedFileWriter;
 class DataFileIterator;
 class FileStore;
 class FileStoreSet;
@@ -528,13 +529,17 @@ class FileStore BSLS_KEYWORD_FINAL : public DataStore {
                                 bsls::Types::Uint64     startSequenceNum);
 
     /// Rollover over the specified `record` from `oldFileSet` to the
-    /// `newFileSet`, and if it is a message record, update the counter of
-    /// the corresponding queue by one in the specified
-    /// `queueKeyCounterMap`.
+    /// `newFileSet`, appending the copied payload, journal and qlist bytes
+    /// through the specified `dataWriter`, `journalWriter` and `qlistWriter`
+    /// respectively, and if it is a message record, update the counter of
+    /// the corresponding queue by one in the specified `queueKeyCounterMap`.
     void writeRolledOverRecord(DataStoreRecord*    record,
                                QueueKeyCounterMap* queueKeyCounterMap,
                                FileSet*            oldFileSet,
-                               FileSet*            newFileSet);
+                               FileSet*            newFileSet,
+                               BufferedFileWriter* dataWriter,
+                               BufferedFileWriter* journalWriter,
+                               BufferedFileWriter* qlistWriter);
 
     /// Issue a sync point.
     ///

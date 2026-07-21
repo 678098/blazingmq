@@ -80,6 +80,7 @@
 #include <bsl_map.h>
 #include <bsl_unordered_set.h>
 #include <bsl_utility.h>
+#include <bsl_vector.h>
 #include <bsla_annotations.h>
 #include <bslim_printer.h>
 #include <bsls_timeinterval.h>
@@ -296,7 +297,147 @@ void printNextEventRecord(bsl::ostream&                       stream,
     allocator->deallocate(p);
 }
 
+/// Capacity, in bytes, of the temporary staging buffer used by
+/// `BufferedFileWriter` during rollover.  Appends up to this size are
+/// accumulated in the buffer and flushed to the mapping in one shot; larger
+/// appends bypass the buffer and are copied straight into the mapping.
+const bsls::Types::Uint64 k_ROLLOVER_WRITE_BUFFER_SIZE = 1024 * 1024;
+
 }  // close unnamed namespace
+
+// ========================
+// class BufferedFileWriter
+// ========================
+
+/// Batch sequential appends destined for a memory-mapped file into a
+/// fixed-size, in-memory staging buffer, copying the buffer into the mapping
+/// in bulk once it is full and, via RAII, when this object is destroyed.
+/// This turns the many small, scattered copies performed while rolling over
+/// records into a few large sequential copies into the mapping, keeping the
+/// bytes being assembled hot in the CPU cache.  An append larger than the
+/// buffer is copied straight into the mapping.  Bytes always end up in the
+/// mapping, so the on-disk layout and recovery semantics are unchanged.
+class BufferedFileWriter {
+  private:
+    // DATA
+    char* d_mapping_p;  // base of the destination mapping (held, not owned)
+
+    bsls::Types::Uint64* d_filePosition_p;  // position of already-flushed
+                                            // bytes in the destination file
+                                            // (held, updated on flush)
+
+    bsl::vector<char> d_buffer;  // fixed-capacity staging buffer
+
+    bsls::Types::Uint64 d_size;  // number of buffered, not-yet-flushed bytes
+
+  private:
+    // NOT IMPLEMENTED
+    BufferedFileWriter(const BufferedFileWriter&) BSLS_KEYWORD_DELETED;
+    BufferedFileWriter&
+    operator=(const BufferedFileWriter&) BSLS_KEYWORD_DELETED;
+
+    // PRIVATE MANIPULATORS
+
+    /// Copy the buffered bytes into the destination mapping and advance the
+    /// tracked file position accordingly.
+    void flush();
+
+  public:
+    // CREATORS
+
+    /// Create a writer appending to the specified `file` starting at the
+    /// specified `filePosition`, staging up to the specified `capacity` bytes
+    /// at a time, and using the specified `allocator` for the staging buffer.
+    /// `filePosition` is updated to reflect flushed bytes and must outlive
+    /// this object.
+    BufferedFileWriter(MappedFileDescriptor& file,
+                       bsls::Types::Uint64&  filePosition,
+                       bsls::Types::Uint64   capacity,
+                       bslma::Allocator*     allocator);
+
+    /// Flush any buffered bytes into the mapping and destroy this object.
+    ~BufferedFileWriter();
+
+    // MANIPULATORS
+
+    /// Append the specified `length` bytes at `from` to this writer and
+    /// return a pointer to where they were copied: either inside the staging
+    /// buffer or, if the append does not fit in the buffer, straight into the
+    /// mapping.  The returned pointer stays valid until the next `write` on
+    /// this writer and may be used to adjust the just-written bytes in place.
+    /// The absolute destination offset of the appended bytes is the value
+    /// `position()` returns immediately before this call.
+    char* write(const char* from, size_t length);
+
+    // ACCESSORS
+
+    /// Return the absolute offset in the destination file at which the next
+    /// `write` will place its bytes.
+    bsls::Types::Uint64 position() const;
+};
+
+// -----------------------
+// class BufferedFileWriter
+// -----------------------
+
+// PRIVATE MANIPULATORS
+void BufferedFileWriter::flush()
+{
+    if (0 == d_size) {
+        return;  // RETURN
+    }
+
+    bsl::memcpy(d_mapping_p + *d_filePosition_p, &d_buffer[0], d_size);
+    *d_filePosition_p += d_size;
+    d_size = 0;
+}
+
+// CREATORS
+BufferedFileWriter::BufferedFileWriter(MappedFileDescriptor& file,
+                                       bsls::Types::Uint64&  filePosition,
+                                       bsls::Types::Uint64   capacity,
+                                       bslma::Allocator*     allocator)
+: d_mapping_p(file.block().base())
+, d_filePosition_p(&filePosition)
+, d_buffer(capacity, allocator)
+, d_size(0)
+{
+    BSLS_ASSERT_SAFE(0 < capacity);
+}
+
+BufferedFileWriter::~BufferedFileWriter()
+{
+    flush();
+}
+
+// MANIPULATORS
+char* BufferedFileWriter::write(const char* from, size_t length)
+{
+    if (length > d_buffer.size()) {
+        // Too large to stage: flush what we have and copy straight into the
+        // mapping.
+        flush();
+        char* const dest = d_mapping_p + *d_filePosition_p;
+        bsl::memcpy(dest, from, length);
+        *d_filePosition_p += length;
+        return dest;  // RETURN
+    }
+
+    if (d_size + length > d_buffer.size()) {
+        flush();
+    }
+
+    char* const dest = &d_buffer[0] + d_size;
+    bsl::memcpy(dest, from, length);
+    d_size += length;
+    return dest;
+}
+
+// ACCESSORS
+bsls::Types::Uint64 BufferedFileWriter::position() const
+{
+    return *d_filePosition_p + d_size;
+}
 
 // ---------------
 // class FileStore
@@ -2737,16 +2878,39 @@ int FileStore::rolloverImpl(bsls::Types::Uint64 timestamp)
     }
 
     // Iterate over outstanding records in the active set, and copy them to the
-    // rollover set.
+    // rollover set.  The copies are staged through temporary in-memory buffers
+    // (one per file) that flush into the mapping in bulk when full, turning
+    // the many small per-record copies into a few large sequential ones.  The
+    // buffers are scoped so that their RAII flush advances the new file set's
+    // positions before the sync point and header are written below.
 
     QueueKeyCounterMap queueKeyCounterMap;
-    for (RecordIterator recordIt = d_records.begin();
-         recordIt != d_records.end();
-         ++recordIt) {
-        writeRolledOverRecord(&(recordIt->second),
-                              &queueKeyCounterMap,
-                              activeFileSet,
-                              newActiveFileSetSp.get());
+    {
+        FileSet* const     newFileSet = newActiveFileSetSp.get();
+        BufferedFileWriter dataWriter(newFileSet->d_data.d_file,
+                                      newFileSet->d_data.d_filePosition,
+                                      k_ROLLOVER_WRITE_BUFFER_SIZE,
+                                      d_allocator_p);
+        BufferedFileWriter journalWriter(newFileSet->d_journal.d_file,
+                                         newFileSet->d_journal.d_filePosition,
+                                         k_ROLLOVER_WRITE_BUFFER_SIZE,
+                                         d_allocator_p);
+        BufferedFileWriter qlistWriter(newFileSet->d_qlist.d_file,
+                                       newFileSet->d_qlist.d_filePosition,
+                                       k_ROLLOVER_WRITE_BUFFER_SIZE,
+                                       d_allocator_p);
+
+        for (RecordIterator recordIt = d_records.begin();
+             recordIt != d_records.end();
+             ++recordIt) {
+            writeRolledOverRecord(&(recordIt->second),
+                                  &queueKeyCounterMap,
+                                  activeFileSet,
+                                  newFileSet,
+                                  &dataWriter,
+                                  &journalWriter,
+                                  &qlistWriter);
+        }
     }
 
     // Print summary of rolled over queues.
@@ -3767,34 +3931,28 @@ void FileStore::writeQueueOpRecordImpl(DataStoreRecordHandle*  handle,
 void FileStore::writeRolledOverRecord(DataStoreRecord*    record,
                                       QueueKeyCounterMap* queueKeyCounterMap,
                                       FileSet*            oldFileSet,
-                                      FileSet*            newFileSet)
+                                      FileSet*            newFileSet,
+                                      BufferedFileWriter* dataWriter,
+                                      BufferedFileWriter* journalWriter,
+                                      BufferedFileWriter* qlistWriter)
 {
     // PRECONDITIONS
     BSLS_ASSERT_SAFE(0 != record->d_recordOffset);
     BSLS_ASSERT_SAFE(RecordType::e_UNDEFINED != record->d_recordType &&
                      RecordType::e_JOURNAL_OP != record->d_recordType);
 
-    // Local refs for convenience
-    MappedFileDescriptor& rDataFile     = newFileSet->d_data.d_file;
-    bsls::Types::Uint64&  rDataFilePos  = newFileSet->d_data.d_filePosition;
-    MappedFileDescriptor& rJournal      = newFileSet->d_journal.d_file;
-    bsls::Types::Uint64&  rJournalPos   = newFileSet->d_journal.d_filePosition;
-    MappedFileDescriptor& rQlistFile    = newFileSet->d_qlist.d_file;
-    bsls::Types::Uint64&  rQlistFilePos = newFileSet->d_qlist.d_filePosition;
-
     const MappedFileDescriptor& aJournal   = oldFileSet->d_journal.d_file;
     const MappedFileDescriptor& aDataFile  = oldFileSet->d_data.d_file;
     const MappedFileDescriptor& aQlistFile = oldFileSet->d_qlist.d_file;
+
+    // Offset of the copied journal record in the new file set, populated by
+    // each branch below and used to update 'record' at the end.
+    bsls::Types::Uint64 newJournalOffset = 0;
 
     if (RecordType::e_MESSAGE == record->d_recordType) {
         // Its a MessageRecord, copy payload as well.
         OffsetPtr<const MessageRecord> fromRec(aJournal.block(),
                                                record->d_recordOffset);
-
-        // Take note of offset in rolled over data file
-        bsls::Types::Uint64 newDataFileOffset = rDataFilePos;
-        BSLS_ASSERT_SAFE(0 ==
-                         newDataFileOffset % bmqp::Protocol::k_DWORD_SIZE);
 
         // Copy payload (including DataHeader) to data file.  This should be
         // done *before* copying message record to journal file.
@@ -3809,16 +3967,22 @@ void FileStore::writeRolledOverRecord(DataStoreRecord*    record,
         const unsigned int dataMsgSize = dataHeader->messageWords() *
                                          bmqp::Protocol::k_WORD_SIZE;
 
-        bsl::memcpy(rDataFile.block().base() + rDataFilePos,
-                    aDataFile.block().base() + messageOffset,
-                    dataMsgSize);
+        // Take note of offset in rolled over data file
+        const bsls::Types::Uint64 newDataFileOffset = dataWriter->position();
+        BSLS_ASSERT_SAFE(0 ==
+                         newDataFileOffset % bmqp::Protocol::k_DWORD_SIZE);
+        dataWriter->write(aDataFile.block().base() + messageOffset,
+                          dataMsgSize);
 
-        rDataFilePos += dataMsgSize;
+        // Append MessageRecord to journal.  All journal records are exactly
+        // 'k_JOURNAL_RECORD_SIZE' bytes, so copying the source record and
+        // adjusting it in place is equivalent to a copy-construction.
 
-        // Append MessageRecord to journal.
-
-        OffsetPtr<MessageRecord> toRec(rJournal.block(), rJournalPos);
-        new (toRec.get()) MessageRecord(*fromRec);
+        newJournalOffset  = journalWriter->position();
+        char* journalDest = journalWriter->write(
+            reinterpret_cast<const char*>(fromRec.get()),
+            FileStoreProtocol::k_JOURNAL_RECORD_SIZE);
+        MessageRecord* toRec = reinterpret_cast<MessageRecord*>(journalDest);
         toRec->setMessageOffsetDwords(newDataFileOffset /
                                       bmqp::Protocol::k_DWORD_SIZE);
 
@@ -3853,14 +4017,6 @@ void FileStore::writeRolledOverRecord(DataStoreRecord*    record,
             if (d_qListAware) {
                 // Copy QLIST record as well.
 
-                // Take note of offset in rolled over QLIST file.
-
-                newQlistOffset = rQlistFilePos;
-                BSLS_ASSERT_SAFE(0 ==
-                                 newQlistOffset % bmqp::Protocol::k_WORD_SIZE);
-
-                // Copy QueueUriRecord to new QLIST file.
-
                 bsls::Types::Uint64 qlistOffset =
                     static_cast<bsls::Types::Uint64>(
                         fromRec->queueUriRecordOffsetWords()) *
@@ -3874,18 +4030,26 @@ void FileStore::writeRolledOverRecord(DataStoreRecord*    record,
                     queueRecHeader->queueRecordWords() *
                     bmqp::Protocol::k_WORD_SIZE;
 
-                bsl::memcpy(rQlistFile.block().base() + rQlistFilePos,
-                            aQlistFile.block().base() + qlistOffset,
-                            queueRecLength);
-                rQlistFilePos += queueRecLength;
+                // Copy QueueUriRecord to new QLIST file, noting its offset in
+                // the rolled over QLIST file.
+
+                newQlistOffset = qlistWriter->position();
+                BSLS_ASSERT_SAFE(0 ==
+                                 newQlistOffset % bmqp::Protocol::k_WORD_SIZE);
+                qlistWriter->write(aQlistFile.block().base() + qlistOffset,
+                                   queueRecLength);
 
                 newFileSet->d_qlist.d_outstandingBytes += queueRecLength;
             }
 
             // Append QueueOpRecord to journal.
 
-            OffsetPtr<QueueOpRecord> toRec(rJournal.block(), rJournalPos);
-            new (toRec.get()) QueueOpRecord(*fromRec);
+            newJournalOffset  = journalWriter->position();
+            char* journalDest = journalWriter->write(
+                reinterpret_cast<const char*>(fromRec.get()),
+                FileStoreProtocol::k_JOURNAL_RECORD_SIZE);
+            QueueOpRecord* toRec = reinterpret_cast<QueueOpRecord*>(
+                journalDest);
             toRec->setQueueUriRecordOffsetWords(newQlistOffset /
                                                 bmqp::Protocol::k_WORD_SIZE);
 
@@ -3911,24 +4075,25 @@ void FileStore::writeRolledOverRecord(DataStoreRecord*    record,
                 BSLS_ASSERT_OPT(false && "Message with unexpected queueKey");
             }
 
-            bsl::memcpy(rJournal.block().base() + rJournalPos,
-                        aJournal.block().base() + record->d_recordOffset,
-                        FileStoreProtocol::k_JOURNAL_RECORD_SIZE);
+            newJournalOffset = journalWriter->position();
+            journalWriter->write(aJournal.block().base() +
+                                     record->d_recordOffset,
+                                 FileStoreProtocol::k_JOURNAL_RECORD_SIZE);
         }
     }
     else {
         BSLS_ASSERT_SAFE(RecordType::e_CONFIRM == record->d_recordType ||
                          RecordType::e_DELETION == record->d_recordType);
-        bsl::memcpy(rJournal.block().base() + rJournalPos,
-                    aJournal.block().base() + record->d_recordOffset,
-                    FileStoreProtocol::k_JOURNAL_RECORD_SIZE);
+
+        newJournalOffset = journalWriter->position();
+        journalWriter->write(aJournal.block().base() + record->d_recordOffset,
+                             FileStoreProtocol::k_JOURNAL_RECORD_SIZE);
     }
 
-    // Irrespective of the type of record, rollover journal's position is
-    // bumped up, and record's offset in-memory is updated.
+    // Irrespective of the type of record, record's offset in-memory is updated
+    // to its position in the rolled over journal.
 
-    record->d_recordOffset = rJournalPos;
-    rJournalPos += FileStoreProtocol::k_JOURNAL_RECORD_SIZE;
+    record->d_recordOffset = newJournalOffset;
 
     newFileSet->d_journal.d_outstandingBytes +=
         FileStoreProtocol::k_JOURNAL_RECORD_SIZE;
