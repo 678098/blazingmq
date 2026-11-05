@@ -23,6 +23,7 @@
 #include <bmqt_queueoptions.h>
 
 #include <bmqu_memoutstream.h>
+#include <bmqu_printutil.h>
 
 // TEST DRIVER
 #include <bmqtst_testhelper.h>
@@ -31,8 +32,12 @@
 #include <bsl_ios.h>
 #include <bsl_limits.h>
 #include <bsl_string.h>
+#include <bsl_vector.h>
+#include <bslma_newdeleteallocator.h>
 #include <bslmf_assert.h>
 #include <bsls_assert.h>
+#include <bsls_timeutil.h>
+#include <bsls_types.h>
 
 // CONVENIENCE
 using namespace BloombergLP;
@@ -55,6 +60,42 @@ struct PrintTestData {
     int         d_type;
     const char* d_expected;
 };
+
+/// @brief Construct and destroy instances of `ARRAY`, each filled with
+///        `SubQueueInfo` elements, and print the time taken.
+///
+/// @param desc         The description of the benchmarked type.
+/// @param numInstances The number of instances to construct.
+/// @param numElements  The number of elements to add to each instance.
+/// @param[out] sink    Accumulates a value read from every instance so the
+///                     work is not optimized out.
+template <class ARRAY>
+void benchmarkConstruct(bsl::string_view     desc,
+                        size_t               numInstances,
+                        size_t               numElements,
+                        bsls::Types::Uint64* sink)
+{
+    BSLS_ASSERT_SAFE(sink);
+
+    bslma::Allocator* alloc = &bslma::NewDeleteAllocator::singleton();
+
+    const bsls::Types::Int64 begin = bsls::TimeUtil::getTimer();
+    for (size_t i = 0; i < numInstances; ++i) {
+        ARRAY array(alloc);
+        for (size_t j = 0; j < numElements; ++j) {
+            array.push_back(bmqp::SubQueueInfo(static_cast<unsigned int>(j)));
+        }
+        *sink += array.back().id();
+    }
+    const bsls::Types::Int64 end = bsls::TimeUtil::getTimer();
+
+    bsl::cout << "    " << desc << ": "
+              << bmqu::PrintUtil::prettyTimeInterval(end - begin)
+              << " total, "
+              << bmqu::PrintUtil::prettyTimeInterval((end - begin) /
+                                                     numInstances)
+              << " per instance" << bsl::endl;
+}
 
 }  // close unnamed namespace
 
@@ -1755,12 +1796,73 @@ static void test7_eventHeaderUtil()
         }
     }
 }
+
+static void testN1_subQueueInfosArrayPerformance()
+// --------------------------------------------------------------------
+// SUBQUEUEINFOS ARRAY PERFORMANCE
+//
+// Concerns:
+//   Compare the cost of building a 'Protocol::SubQueueInfosArray' with
+//   the cost of building a 'bsl::vector' of 'SubQueueInfo'.
+//
+// Plan:
+//   For a number of elements N, construct K instances of each container
+//   type, add N elements to each one, and print the time taken.  Use
+//   the new/delete allocator to measure real allocation costs.
+//
+// Testing:
+//   Performance
+// --------------------------------------------------------------------
+{
+    bmqtst::TestHelper::printTestName("SUBQUEUEINFOS ARRAY PERFORMANCE");
+
+    typedef bmqp::Protocol::SubQueueInfosArray Array;
+    typedef bsl::vector<bmqp::SubQueueInfo>    Vector;
+
+    const size_t k_NUM_INSTANCES = 1000000;
+    const size_t k_NUM_ELEMENTS[] = {1,
+                                     4,
+                                     bmqp::Protocol::k_SUBID_ARRAY_STATIC_LEN,
+                                     bmqp::Protocol::k_SUBID_ARRAY_STATIC_LEN +
+                                         1,
+                                     64};
+
+    bsls::Types::Uint64 sink = 0;
+
+    // Warmup
+    benchmarkConstruct<Array>("warmup", k_NUM_INSTANCES, 1, &sink);
+    benchmarkConstruct<Vector>("warmup", k_NUM_INSTANCES, 1, &sink);
+
+    for (size_t i = 0; i < sizeof(k_NUM_ELEMENTS) / sizeof(*k_NUM_ELEMENTS);
+         ++i) {
+        const size_t numElements = k_NUM_ELEMENTS[i];
+
+        bsl::cout << k_NUM_INSTANCES << " instances with " << numElements
+                  << " element(s):" << bsl::endl;
+        benchmarkConstruct<Array>("SubQueueInfosArray",
+                                  k_NUM_INSTANCES,
+                                  numElements,
+                                  &sink);
+        benchmarkConstruct<Vector>("bsl::vector       ",
+                                   k_NUM_INSTANCES,
+                                   numElements,
+                                   &sink);
+    }
+
+    if (sink == 0) {
+        bsl::cout << sink << bsl::endl;
+    }
+}
+
 // ============================================================================
 //                                 MAIN PROGRAM
 // ----------------------------------------------------------------------------
 
 int main(int argc, char* argv[])
 {
+    // To be called only once per process instantiation.
+    bsls::TimeUtil::initialize();
+
     TEST_PROLOG(bmqtst::TestHelper::e_DEFAULT);
 
     switch (_testCase) {
@@ -1772,6 +1874,7 @@ int main(int argc, char* argv[])
     case 3: test3_flagUtils(); break;
     case 2: test2_bitManipulation(); break;
     case 1: test1_breathingTest(); break;
+    case -1: testN1_subQueueInfosArrayPerformance(); break;
     default: {
         cerr << "WARNING: CASE '" << _testCase << "' NOT FOUND." << endl;
         bmqtst::TestHelperUtil::testStatus() = -1;
