@@ -901,7 +901,7 @@ Interactive::Interactive(const Parameters& parameters,
     d_producerIdProperty.append(pidStr.str());
 }
 
-int Interactive::initialize(bmqa::Session*             session,
+int Interactive::initialize(bmqa::AbstractSession*     session,
                             bmqa::SessionEventHandler* sessionEventHandler)
 {
     // Print the welcome banner

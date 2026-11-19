@@ -38,7 +38,7 @@ BALL_LOG_SET_NAMESPACE_CATEGORY("BMQTOOL.POSTER");
 }
 
 PostingContext::PostingContext(
-    bmqa::Session*                  session,
+    bmqa::AbstractSession*          session,
     const Parameters&               parameters,
     const bmqa::QueueId&            queueId,
     FileLogger*                     fileLogger,
@@ -246,9 +246,9 @@ Poster::Poster(FileLogger*         fileLogger,
 }
 
 bsl::shared_ptr<PostingContext>
-Poster::createPostingContext(bmqa::Session*       session,
-                             const Parameters&    parameters,
-                             const bmqa::QueueId& queueId)
+Poster::createPostingContext(bmqa::AbstractSession* session,
+                             const Parameters&      parameters,
+                             const bmqa::QueueId&   queueId)
 {
     return bsl::make_shared<PostingContext>(session,
                                             parameters,

@@ -30,6 +30,7 @@
 #include <m_bmqtool_terminalreader.h>
 
 // BMQ
+#include <bmqa_abstractsession.h>
 #include <bmqa_closequeuestatus.h>
 #include <bmqa_configurequeuestatus.h>
 #include <bmqa_message.h>
@@ -103,7 +104,7 @@ class Interactive {
     BALL_LOG_SET_CLASS_CATEGORY("BMQTOOL.INTERACTIVE");
 
   private:
-    bmqa::Session* d_session_p;
+    bmqa::AbstractSession* d_session_p;
     // bmqa::Session to work with
 
     bmqa::SessionEventHandler* d_sessionEventHandler_p;
@@ -183,7 +184,7 @@ class Interactive {
 
     /// Initialize this `Interactive` instance, by setting the specified
     /// `session` to use.
-    int initialize(bmqa::Session*             session,
+    int initialize(bmqa::AbstractSession*     session,
                    bmqa::SessionEventHandler* sessionEventHandler);
 
     /// main loop; read from stdin, parse JSON commands and executes them.

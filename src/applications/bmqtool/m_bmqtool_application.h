@@ -33,6 +33,7 @@
 #include <m_bmqtool_storageinspector.h>
 
 // BMQ
+#include <bmqa_abstractsession.h>
 #include <bmqa_messageeventbuilder.h>
 #include <bmqa_queueid.h>
 #include <bmqa_session.h>
@@ -114,7 +115,7 @@ class Application : public bmqa::SessionEventHandler {
 
     bmqtsk::ConsoleObserver d_consoleObserver;
 
-    bslma::ManagedPtr<bmqa::Session> d_session_mp;
+    bslma::ManagedPtr<bmqa::AbstractSession> d_session_mp;
     // Session with the BlazingMQ broker.
 
     StorageInspector d_storageInspector;
@@ -228,6 +229,15 @@ class Application : public bmqa::SessionEventHandler {
     ~Application() BSLS_KEYWORD_OVERRIDE;
 
     // MANIPULATORS
+
+    /// @brief Use the specified `session` instead of creating a session
+    ///        connected to the broker.
+    ///
+    /// The behavior is undefined unless called before `start`.
+    ///
+    /// @param session The session to use.
+    void setSession(bslma::ManagedPtr<bmqa::AbstractSession> session);
+
     int start();
 
     int run();

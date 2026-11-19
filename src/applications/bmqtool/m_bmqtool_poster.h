@@ -34,8 +34,8 @@
 #include <m_bmqtool_parameters.h>
 
 // BMQ
+#include <bmqa_abstractsession.h>
 #include <bmqa_messageproperties.h>
-#include <bmqa_session.h>
 #include <bmqst_statcontext.h>
 
 // BDE
@@ -66,7 +66,7 @@ class PostingContext {
     /// the Application that uses this Interactive object
     const Parameters& d_parameters;
 
-    bmqa::Session* d_session_p;
+    bmqa::AbstractSession* d_session_p;
     // A session to post messages.
     // Held, not owned.
 
@@ -100,7 +100,7 @@ class PostingContext {
   public:
     // CREATORS
 
-    PostingContext(bmqa::Session*                  session,
+    PostingContext(bmqa::AbstractSession*          session,
                    const Parameters&               parameters,
                    const bmqa::QueueId&            queueId,
                    FileLogger*                     fileLogger,
@@ -163,9 +163,9 @@ class Poster {
 
     // MANIPULATORS
     bsl::shared_ptr<PostingContext>
-    createPostingContext(bmqa::Session*       session,
-                         const Parameters&    parameters,
-                         const bmqa::QueueId& queueId);
+    createPostingContext(bmqa::AbstractSession* session,
+                         const Parameters&      parameters,
+                         const bmqa::QueueId&   queueId);
 
   private:
     // NOT IMPLEMENTED

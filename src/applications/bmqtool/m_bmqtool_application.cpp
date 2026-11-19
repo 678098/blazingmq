@@ -101,12 +101,12 @@ struct BuildConfirmFunctor {
 /// Stack-built functor to pass to `bmqp::ProtocolUtil::buildEvent`
 struct BuildConfirmOverflowFunctor {
     // DATA
-    bmqa::Session&             d_session;
+    bmqa::AbstractSession&     d_session;
     bmqa::ConfirmEventBuilder& d_builder;
 
     // CREATORS
     inline explicit BuildConfirmOverflowFunctor(
-        bmqa::Session&             session,
+        bmqa::AbstractSession&     session,
         bmqa::ConfirmEventBuilder& builder)
     : d_session(session)
     , d_builder(builder)
@@ -488,7 +488,10 @@ int Application::initialize()
     }
 
     // Create the session
-    if (d_parameters.noSessionEventHandler()) {
+    if (d_session_mp) {
+        // The session was provided by `setSession`.
+    }
+    else if (d_parameters.noSessionEventHandler()) {
         d_session_mp.load(new (*d_allocator_p)
                               bmqa::Session(options, d_allocator_p),
                           d_allocator_p);
@@ -911,6 +914,12 @@ Application::~Application()
 }
 
 // MANIPULATORS
+
+void Application::setSession(bslma::ManagedPtr<bmqa::AbstractSession> session)
+{
+    d_session_mp = session;
+    BSLS_ASSERT_SAFE(d_session_mp);
+}
 
 int Application::start()
 {
