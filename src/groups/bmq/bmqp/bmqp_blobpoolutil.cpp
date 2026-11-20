@@ -26,14 +26,37 @@ namespace bmqp {
 namespace {
 const int k_BLOB_POOL_GROWTH_STRATEGY = 1024;
 
-/// Create a new blob at the specified `arena` address, using the specified
-/// `bufferFactory` and `allocator`.
-void createBlob(bdlbb::BlobBufferFactory* bufferFactory,
-                void*                     arena,
-                bslma::Allocator*         allocator)
-{
-    new (arena) bdlbb::Blob(bufferFactory, allocator);
-}
+/// @brief Functor creating blobs that use a given buffer factory.
+class BlobCreator {
+  private:
+    // DATA
+
+    /// Buffer factory used by the created blobs.
+    bdlbb::BlobBufferFactory* d_bufferFactory_p;
+
+  public:
+    // CREATORS
+
+    /// @brief Create a functor that creates blobs using `bufferFactory`.
+    ///
+    /// @param bufferFactory The buffer factory for the created blobs.
+    explicit BlobCreator(bdlbb::BlobBufferFactory* bufferFactory)
+    : d_bufferFactory_p(bufferFactory)
+    {
+        BSLS_ASSERT_SAFE(d_bufferFactory_p);
+    }
+
+    // ACCESSORS
+
+    /// @brief Create a new blob at the `arena` address.
+    ///
+    /// @param arena     The memory to create the blob in.
+    /// @param allocator The allocator used by the blob.
+    void operator()(void* arena, bslma::Allocator* allocator) const
+    {
+        new (arena) bdlbb::Blob(d_bufferFactory_p, allocator);
+    }
+};
 
 }  // close unnamed namespace
 
@@ -50,13 +73,9 @@ BlobPoolUtil::createBlobPool(bdlbb::BlobBufferFactory* blobBufferFactory_p,
 
     bslma::Allocator* alloc = bslma::Default::allocator(allocator);
 
-    return bsl::allocate_shared<BlobSpPool>(
-        alloc,
-        bdlf::BindUtil::bind(&createBlob,
-                             blobBufferFactory_p,
-                             bdlf::PlaceHolders::_1,   // arena
-                             bdlf::PlaceHolders::_2),  // allocator
-        k_BLOB_POOL_GROWTH_STRATEGY);
+    return bsl::allocate_shared<BlobSpPool>(alloc,
+                                            BlobCreator(blobBufferFactory_p),
+                                            k_BLOB_POOL_GROWTH_STRATEGY);
 }
 
 }  // close package namespace
