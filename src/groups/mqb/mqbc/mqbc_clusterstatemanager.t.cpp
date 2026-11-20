@@ -110,6 +110,7 @@ struct Tester {
     mqbmock::ClusterStateLedger*                 d_clusterStateLedger_p;
     bslma::ManagedPtr<mqbc::ClusterStateManager> d_clusterStateManager_mp;
     mqbmock::StorageManager                      d_storageManager;
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
 
   public:
     // CREATORS
@@ -170,7 +171,7 @@ struct Tester {
         d_cluster_mp->_clusterData()->stats().setIsMember(true);
         BSLS_ASSERT_OPT(d_cluster_mp->_channels().size() > 0);
 
-        bmqu::Time::initialize(
+        d_timeGuard_mp = bmqu::Time::mockTime(
             &bsls::SystemTime::nowRealtimeClock,
             bdlf::BindUtil::bind(&Tester::nowMonotonicClock, this),
             bdlf::BindUtil::bind(&Tester::highResolutionTimer, this),
@@ -224,8 +225,6 @@ struct Tester {
         // Stop the cluster
         d_clusterStateManager_mp->stop();
         d_cluster_mp->stop();
-
-        bmqu::Time::shutdown();
     }
 
     // MANIPULATORS

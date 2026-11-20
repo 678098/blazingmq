@@ -128,6 +128,8 @@ struct TestHelper {
 
     bmqu::TempDirectory d_tempDir;
 
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
+
     // CREATORS
     TestHelper()
     : d_cluster_mp(0)
@@ -190,13 +192,14 @@ struct TestHelper {
         // To pass `inDispatcherThread` checks (allow ANY thread):
         d_cluster_mp->setThreadId(mqbi::DispatcherClient::k_ANY_THREAD_ID);
 
-        bmqu::Time::initialize(
+        d_timeGuard_mp = bmqu::Time::mockTime(
             bdlf::BindUtil::bind(&mqbmock::Cluster::getTime,
                                  d_cluster_mp.get()),
             bdlf::BindUtil::bind(&mqbmock::Cluster::getTime,
                                  d_cluster_mp.get()),
             bdlf::BindUtil::bind(&mqbmock::Cluster::getTimeInt64,
-                                 d_cluster_mp.get()));
+                                 d_cluster_mp.get()),
+            bmqtst::TestHelperUtil::allocator());
 
         for (mqbnet::Cluster::NodesList::iterator iter =
                  d_cluster_mp->netCluster().nodes().begin();
@@ -205,8 +208,6 @@ struct TestHelper {
             d_nodes.push_back(dynamic_cast<mqbnet::MockClusterNode*>(*iter));
         }
     }
-
-    ~TestHelper() { bmqu::Time::shutdown(); }
 
     // MANIPULATORS
 

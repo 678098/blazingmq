@@ -216,7 +216,8 @@ void Tester::connectResultCb(ChannelFactoryEvent::Enum       event,
 }
 
 Tester::Tester()
-: d_scheduler(bmqtst::TestHelperUtil::allocator())
+: d_mockTime(bmqtst::TestHelperUtil::allocator())
+, d_scheduler(bmqtst::TestHelperUtil::allocator())
 , d_timeSource(&d_scheduler)
 , d_baseFactory(bmqtst::TestHelperUtil::allocator())
 , d_resolverResults(bmqtst::TestHelperUtil::allocator())

@@ -142,6 +142,9 @@ class TestContext {
     /// Context object used to collect responses from the nodes
     ReqContextSp d_requestContextSp;
 
+    /// Keeps the cluster time installed into `bmqu::Time`
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
+
   public:
     // TRAITS
     BSLMF_NESTED_TRAIT_DECLARATION(TestContext, bslma::UsesBslmaAllocator)
@@ -259,12 +262,12 @@ TestContext::TestContext(int nodesCount, bslma::Allocator* allocator)
 {
     d_requestContextSp->setDestinationNodes(d_nodes);
 
-    bmqu::Time::shutdown();
-    bmqu::Time::initialize(
+    d_timeGuard_mp = bmqu::Time::mockTime(
         bdlf::BindUtil::bind(&mqbmock::Cluster::getTime, d_cluster_mp.get()),
         bdlf::BindUtil::bind(&mqbmock::Cluster::getTime, d_cluster_mp.get()),
         bdlf::BindUtil::bind(&mqbmock::Cluster::getTimeInt64,
-                             d_cluster_mp.get()));
+                             d_cluster_mp.get()),
+        d_allocator_p);
 
     int rc = d_cluster_mp->_scheduler().start();
     BMQTST_ASSERT_EQ(rc, 0);
@@ -792,7 +795,7 @@ int main(int argc, char* argv[])
 {
     TEST_PROLOG(bmqtst::TestHelper::e_DEFAULT);
 
-    bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+    bmqu::Time::initialize();
 
     switch (_testCase) {
     case 0:

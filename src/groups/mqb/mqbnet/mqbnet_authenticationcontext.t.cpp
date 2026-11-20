@@ -70,6 +70,7 @@ struct TestBench {
     bdlmt::EventScheduler               d_scheduler;
     TestClock                           d_testClock;
     bslma::Allocator*                   d_allocator_p;
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
 
     TestBench(const TestBench&) BSLS_KEYWORD_DELETED;
     TestBench& operator=(const TestBench&) BSLS_KEYWORD_DELETED;
@@ -80,8 +81,7 @@ struct TestBench {
     , d_testClock(&d_scheduler, allocator)
     , d_allocator_p(allocator)
     {
-        bmqu::Time::shutdown();
-        bmqu::Time::initialize(
+        d_timeGuard_mp = bmqu::Time::mockTime(
             bdlf::BindUtil::bindS(allocator,
                                   &TestClock::realtimeClock,
                                   &d_testClock),
@@ -565,7 +565,7 @@ int main(int argc, char* argv[])
     TEST_PROLOG(bmqtst::TestHelper::e_DEFAULT);
 
     {
-        bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+        bmqu::Time::initialize();
 
         switch (_testCase) {
         case 0:

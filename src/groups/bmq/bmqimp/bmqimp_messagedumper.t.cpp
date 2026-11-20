@@ -157,6 +157,9 @@ struct Tester BSLS_CPP11_FINAL {
     bslma::Allocator* d_allocator_p;
     // Allocator to use
 
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
+    // Keeps this object's time installed into 'bmqu::Time'
+
   private:
     Tester(const Tester& other) BSLS_CPP11_DELETED;
     Tester& operator=(const Tester& other) BSLS_CPP11_DELETED;
@@ -179,8 +182,6 @@ struct Tester BSLS_CPP11_FINAL {
     /// Create a `Tester` object using the specified `allocator` to supply
     /// memory and perform any needed utilites initialization (e.g. time).
     explicit Tester(bslma::Allocator* allocator);
-
-    ~Tester();
 
     // MANIPULATORS
     int processDumpCommand(const bslstl::StringRef& command);
@@ -330,18 +331,13 @@ Tester::Tester(bslma::Allocator* allocator)
 , d_confirmEventBuilder(d_blobSpPool_sp.get(), allocator)
 , d_allocator_p(allocator)
 {
-    bmqu::Time::initialize(
+    d_timeGuard_mp = bmqu::Time::mockTime(
         bdlf::BindUtil::bindS(d_allocator_p, &Tester::now, this),
         bdlf::BindUtil::bindS(d_allocator_p, &Tester::now, this),
         bdlf::BindUtil::bindS(d_allocator_p,
                               &Tester::highResolutionTimer,
                               this),
         allocator);
-}
-
-Tester::~Tester()
-{
-    bmqu::Time::shutdown();
 }
 
 // MANIPULATORS

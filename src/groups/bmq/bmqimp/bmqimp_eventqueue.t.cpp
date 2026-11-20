@@ -611,12 +611,12 @@ static void test6_workingStatsTest()
     start.setLevel(0).setIndex(0);
     end.setLevel(0).setIndex(1);
 
-    bmqu::Time::shutdown();
-    bmqu::Time::initialize(
-        bdlf::BindUtil::bind(&TestClock::realtimeClock, &testClock),
-        bdlf::BindUtil::bind(&TestClock::monotonicClock, &testClock),
-        bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock),
-        bmqtst::TestHelperUtil::allocator());
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> timeGuard =
+        bmqu::Time::mockTime(
+            bdlf::BindUtil::bind(&TestClock::realtimeClock, &testClock),
+            bdlf::BindUtil::bind(&TestClock::monotonicClock, &testClock),
+            bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock),
+            bmqtst::TestHelperUtil::allocator());
 
     expected << "\n"
              << "                        Queue                        |       "

@@ -32,11 +32,13 @@
 //  MockTime mockTime;
 //
 //  mockTime.advanceHighResTimer(10);
-//
-//  bmqu::Time::shutdown();
 //..
 
+#include <bmqu_time.h>
+
 // BDE
+#include <bslma_allocator.h>
+#include <bslma_managedptr.h>
 #include <bsls_keyword.h>
 #include <bsls_timeinterval.h>
 #include <bsls_types.h>
@@ -56,6 +58,9 @@ class MockTime {
     bsls::TimeInterval d_monotonicClock;
     bsls::Types::Int64 d_highResTimer;
 
+    /// Keeps this object installed into `bmqu::Time`.
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_guard_mp;
+
   private:
     // NOT IMPLEMENTED
     MockTime(const MockTime&) BSLS_KEYWORD_DELETED;
@@ -67,11 +72,12 @@ class MockTime {
   public:
     // CREATORS
 
-    /// Default constructor - and register this object to the bmqu::Time
-    MockTime();
-
-    /// Destructor
-    ~MockTime();
+    /// @brief Create a mock with all time counters at 0, and install it
+    ///        into `bmqu::Time` for the lifetime of this object.
+    ///
+    /// @param allocator The allocator to use, or the default allocator if
+    ///                  not specified.
+    explicit MockTime(bslma::Allocator* allocator = 0);
 
     // MANIPULATORS
     MockTime& setRealTimeClock(const bsls::TimeInterval& value);

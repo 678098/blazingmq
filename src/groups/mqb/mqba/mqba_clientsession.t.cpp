@@ -689,6 +689,7 @@ class TestBench {
     bsl::shared_ptr<TestAuthorizer>           d_authorizer_sp;
     mqba::ClientSession                       d_cs;
     bslma::Allocator*                         d_allocator_p;
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
 
     static const int k_PAYLOAD_LENGTH = 36;
 
@@ -768,8 +769,7 @@ class TestBench {
         d_cs.setThreadId(bslmt::ThreadUtil::selfId());
 
         // Setup test time source
-        bmqu::Time::shutdown();
-        bmqu::Time::initialize(
+        d_timeGuard_mp = bmqu::Time::mockTime(
             bdlf::BindUtil::bind(&TestClock::realtimeClock, &d_testClock),
             bdlf::BindUtil::bind(&TestClock::monotonicClock, &d_testClock),
             bdlf::BindUtil::bind(&TestClock::highResTimer, &d_testClock),
@@ -2675,7 +2675,7 @@ int main(int argc, char* argv[])
     TEST_PROLOG(bmqtst::TestHelper::e_DEFAULT);
 
     {
-        bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+        bmqu::Time::initialize();
 
         mqbcfg::AppConfig brokerConfig(bmqtst::TestHelperUtil::allocator());
         brokerConfig.brokerVersion() = 999999;  // required for test case 8

@@ -436,6 +436,9 @@ struct TestSession BSLS_CPP11_FINAL {
     int d_startCounter;
     int d_stopCounter;
     // register state changes
+
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
+    // keeps 'd_testClock_p' installed into 'bmqu::Time'
   private:
     TestSession(const TestSession& other) BSLS_CPP11_DELETED;
     TestSession& operator=(const TestSession& other) BSLS_CPP11_DELETED;
@@ -906,8 +909,7 @@ TestSession::TestSession(const bmqt::SessionOptions& sessionOptions,
     d_testChannel.onClose(
         bdlf::MemFnUtil::memFn(&TestSession::onChannelClose, this));
 
-    bmqu::Time::shutdown();
-    bmqu::Time::initialize(
+    d_timeGuard_mp = bmqu::Time::mockTime(
         bdlf::BindUtil::bind(&TestClock::realtimeClock, d_testClock_p),
         bdlf::BindUtil::bind(&TestClock::monotonicClock, d_testClock_p),
         bdlf::BindUtil::bind(&TestClock::highResTimer, d_testClock_p),

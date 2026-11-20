@@ -30,7 +30,7 @@ static void test1_basicFunctionality()
 {
     bmqtst::TestHelper::printTestName("BASIC FUNCTIONALITY");
 
-    bmqtst::MockTime obj;
+    bmqtst::MockTime obj(bmqtst::TestHelperUtil::allocator());
 
     PV("Default constructed state");
     BMQTST_ASSERT_EQ(obj.realtimeClock(), bsls::TimeInterval(0));

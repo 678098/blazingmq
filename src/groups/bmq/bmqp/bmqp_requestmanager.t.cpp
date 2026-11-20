@@ -135,6 +135,9 @@ class TestContext {
     // Allocator to use
     bslma::Allocator* d_allocator_p;
 
+    // Keeps `d_testClock` installed into `bmqu::Time`
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
+
   public:
     // TRAITS
     BSLMF_NESTED_TRAIT_DECLARATION(TestContext, bslma::UsesBslmaAllocator)
@@ -222,8 +225,7 @@ TestContext::TestContext(bool lateResponseMode, bslma::Allocator* allocator)
                    allocator)
 , d_allocator_p(allocator)
 {
-    bmqu::Time::shutdown();
-    bmqu::Time::initialize(
+    d_timeGuard_mp = bmqu::Time::mockTime(
         bdlf::BindUtil::bind(&TestClock::realtimeClock, &d_testClock),
         bdlf::BindUtil::bind(&TestClock::monotonicClock, &d_testClock),
         bdlf::BindUtil::bind(&TestClock::highResTimer, &d_testClock),
@@ -1284,7 +1286,7 @@ int main(int argc, char* argv[])
 {
     TEST_PROLOG(bmqtst::TestHelper::e_DEFAULT);
 
-    bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+    bmqu::Time::initialize();
 
     switch (_testCase) {
     case 0:

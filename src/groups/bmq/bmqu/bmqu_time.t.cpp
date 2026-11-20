@@ -19,6 +19,7 @@
 #include <bdlf_bind.h>
 #include <bsl_functional.h>
 #include <bsl_string_view.h>
+#include <bslma_managedptr.h>
 #include <bsls_assert.h>
 #include <bsls_systemtime.h>
 #include <bsls_timeinterval.h>
@@ -112,8 +113,8 @@ static void test1_breathingTest()
 //   Exercise the basic functionality of the component.
 //
 // Plan:
-//   - Create a TestClock, initialize the bmqu::TimeUtil with it, and
-//     verify each timer function returns the properly set value.
+//   - Create a TestClock, mock the bmqu::Time with it, and verify each
+//     timer function returns the properly set value.
 //
 // Testing:
 //   Basic functionality
@@ -121,11 +122,12 @@ static void test1_breathingTest()
 {
     bmqtst::TestHelper::printTestName("BREATHING TEST");
 
-    TestClock testClock;
-    bmqu::Time::initialize(
+    TestClock                                    testClock;
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> guard = bmqu::Time::mockTime(
         bdlf::BindUtil::bind(&TestClock::realtimeClock, &testClock),
         bdlf::BindUtil::bind(&TestClock::monotonicClock, &testClock),
-        bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock));
+        bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock),
+        bmqtst::TestHelperUtil::allocator());
 
     PV("Testing real time clock");
     {
@@ -157,8 +159,6 @@ static void test1_breathingTest()
         testClock.d_highResTimer = 0;
         BMQTST_ASSERT_EQ(0, bmqu::Time::highResolutionTimer());
     }
-
-    bmqu::Time::shutdown();
 }
 
 static void test2_defaultInitializeShutdown()
@@ -170,7 +170,7 @@ static void test2_defaultInitializeShutdown()
 //   high resolution timer initialize and shutdown.
 //
 // Plan:
-//   - Verify that initialization and shutdown pass.
+//   - Verify that repeated initialization and shutdown pass.
 //
 // Testing:
 //   initialize()
@@ -179,62 +179,57 @@ static void test2_defaultInitializeShutdown()
 {
     bmqtst::TestHelper::printTestName("DEFAULT INITIALIZE & SHUTDOWN");
 
-    // Initialize the 'Time'.
     BMQTST_ASSERT_SAFE_PASS(bmqu::Time::initialize());
-
-    // Initialize should be a no-op.
     BMQTST_ASSERT_SAFE_PASS(bmqu::Time::initialize());
-
-    // Shutdown the Time is a no-op.
     BMQTST_ASSERT_SAFE_PASS(bmqu::Time::shutdown());
-
-    // Shutdown the Time.
     BMQTST_ASSERT_SAFE_PASS(bmqu::Time::shutdown());
-
-    // Shutdown again should assert
-    BMQTST_ASSERT_SAFE_FAIL(bmqu::Time::shutdown());
 }
 
-static void test3_customInitializeShutdown()
+static void test3_mockTimeGuard()
 // ------------------------------------------------------------------------
-// CUSTOM INITIALIZE & SHUTDOWN
+// MOCK TIME GUARD
 //
 // Concerns:
-//   Ensure that custom-provided mechanism to provide system clocks and
-//   high resolution timer initialize and shutdown.
+//   - The mock clocks are used only while the guard is alive.
+//   - At most one guard can be alive at a time.
 //
 // Plan:
-//   - Verify that initialization and shutdown pass.
+//   - Mock the time, and verify the mock is used.
+//   - Verify a second guard cannot be created while the first one lives.
+//   - Destroy the guard, and verify the system clock is used.
 //
 // Testing:
-//   initialize()
-//   shutdown()
+//   mockTime()
 // ------------------------------------------------------------------------
 {
-    bmqtst::TestHelper::printTestName("CUSTOM INITIALIZE & SHUTDOWN");
+    bmqtst::TestHelper::printTestName("MOCK TIME GUARD");
 
     TestClock testClock;
+    testClock.d_monotonicClock.setTotalSeconds(5);
 
-    // Initialize the 'Time'.
-    BMQTST_ASSERT_SAFE_PASS(bmqu::Time::initialize(
+    bmqu::Time::initialize();
+
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> guard = bmqu::Time::mockTime(
         bdlf::BindUtil::bind(&TestClock::realtimeClock, &testClock),
         bdlf::BindUtil::bind(&TestClock::monotonicClock, &testClock),
-        bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock)));
+        bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock),
+        bmqtst::TestHelperUtil::allocator());
+    BMQTST_ASSERT_EQ(bsls::TimeInterval(5, 0),
+                     bmqu::Time::nowMonotonicClock());
 
-    // Initialize should be a no-op.
-    BMQTST_ASSERT_SAFE_PASS(bmqu::Time::initialize(
+    BMQTST_ASSERT_SAFE_FAIL(bmqu::Time::mockTime(
         bdlf::BindUtil::bind(&TestClock::realtimeClock, &testClock),
         bdlf::BindUtil::bind(&TestClock::monotonicClock, &testClock),
-        bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock)));
+        bdlf::BindUtil::bind(&TestClock::highResTimer, &testClock),
+        bmqtst::TestHelperUtil::allocator()));
+    BMQTST_ASSERT_EQ(bsls::TimeInterval(5, 0),
+                     bmqu::Time::nowMonotonicClock());
 
-    // Shutdown the Time is a no-op.
-    BMQTST_ASSERT_SAFE_PASS(bmqu::Time::shutdown());
+    guard.reset();
+    BMQTST_ASSERT_NE(bsls::TimeInterval(5, 0),
+                     bmqu::Time::nowMonotonicClock());
 
-    // Shutdown the Time.
-    BMQTST_ASSERT_SAFE_PASS(bmqu::Time::shutdown());
-
-    // Shutdown again should assert
-    BMQTST_ASSERT_SAFE_FAIL(bmqu::Time::shutdown());
+    bmqu::Time::shutdown();
 }
 
 // ============================================================================
@@ -299,7 +294,7 @@ static void testN1_performance()
     addResult(&table, "bsl::function", bslFn, k_NUM_CALLS);
     addResult(&table, "bdlf::Bind", bindFn, k_NUM_CALLS);
 
-    bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+    bmqu::Time::initialize();
     addResult(&table,
               "bmqu::Time",
               &bmqu::Time::nowMonotonicClock,
@@ -319,7 +314,7 @@ int main(int argc, char* argv[])
 
     switch (_testCase) {
     case 0:
-    case 3: test3_customInitializeShutdown(); break;
+    case 3: test3_mockTimeGuard(); break;
     case 2: test2_defaultInitializeShutdown(); break;
     case 1: test1_breathingTest(); break;
     case -1: testN1_performance(); break;

@@ -138,6 +138,7 @@ class TestBench {
     TestClock                           d_testClock;
     StateSpPool                         d_stateSpPool;
     bslma::Allocator*                   d_allocator_p;
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
 
     TestBench(bslma::Allocator* allocator_p);
     ~TestBench();
@@ -186,10 +187,11 @@ TestBench::TestBench(bslma::Allocator* allocator_p)
                                                   bdlf::PlaceHolders::_5,
                                                   bdlf::PlaceHolders::_6));
 
-    bmqu::Time::initialize(
+    d_timeGuard_mp = bmqu::Time::mockTime(
         bdlf::BindUtil::bind(&TestClock::realtimeClock, &d_testClock),
         bdlf::BindUtil::bind(&TestClock::monotonicClock, &d_testClock),
-        bdlf::BindUtil::bind(&TestClock::highResTimer, &d_testClock));
+        bdlf::BindUtil::bind(&TestClock::highResTimer, &d_testClock),
+        d_allocator_p);
 
     bmqu::MemOutStream errorDescription(allocator_p);
 
@@ -199,8 +201,6 @@ TestBench::TestBench(bslma::Allocator* allocator_p)
 TestBench::~TestBench()
 {
     d_cluster.stop();
-
-    bmqu::Time::shutdown();
 }
 
 bsl::shared_ptr<mqbmock::Queue> TestBench::getQueue()

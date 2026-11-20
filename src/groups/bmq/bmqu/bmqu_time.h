@@ -25,11 +25,16 @@
 // are defined a series of static methods for retrieving the current system
 // time from the currently installed mechanism.  This component provides access
 // to monotonic clock, real-time (wall) clock and a high resolution timer.  The
-// mechanism to retrieve system clock and the timer can be overridden, which is
-// useful while testing components which rely on system clock or timer.
+// clocks and the timer can be replaced with `mockTime`, which is useful while
+// testing components which rely on system clock or timer.
 
 // BDE
 #include <bsl_functional.h>
+#include <bslma_allocator.h>
+#include <bslma_managedptr.h>
+#include <bslma_usesbslmaallocator.h>
+#include <bslmf_nestedtraitdeclaration.h>
+#include <bsls_keyword.h>
 #include <bsls_timeinterval.h>
 #include <bsls_types.h>
 
@@ -51,59 +56,90 @@ struct Time {
     /// Signature of the callback for the high resolution timer.
     typedef bsl::function<bsls::Types::Int64()> HighResolutionTimeCb;
 
+    class MockTimeGuard;
+
     // CLASS METHODS
 
-    /// Initialize the utilities with platform-provided mechanism to provide
-    /// system clocks and high resolution timer.  This method only needs to
-    /// be called once before any other method, but can be called multiple
-    /// times provided that for each call to `initialize` there is a
-    /// corresponding call to `shutdown`.  Use the optionally specified
-    /// `allocator` for any memory allocation, or the `global` allocator if
-    /// none is provided.  Note that specifying the allocator is provided
-    /// for test drivers only, and therefore users should let it default to
-    /// the global allocator.
-    static void initialize(bslma::Allocator* allocator = 0);
+    /// @brief Initialize the platform-provided system clocks and high
+    ///        resolution timer.
+    ///
+    /// May be called multiple times.
+    static void initialize();
 
-    /// Initialize the utilities with the specified `realTimeClockCb`,
-    /// `monotonicClockCb` and `highResTimeCb` to provide system clocks and
-    /// high resolution timer respectively.  This method only needs to be
-    /// called once before any other method, but can be called multiple
-    /// times provided that for each call to `initialize` there is a
-    /// corresponding call to `shutdown`.  Use the optionally specified
-    /// `allocator` for any memory allocation, or the `global` allocator if
-    /// none is provided.  Note that specifying the allocator is provided
-    /// for test drivers only, and therefore users should let it default to
-    /// the global allocator.
-    static void initialize(const SystemTimeCb&         realTimeClockCb,
-                           const SystemTimeCb&         monotonicClockCb,
-                           const HighResolutionTimeCb& highResTimeCb,
-                           bslma::Allocator*           allocator = 0);
-
-    /// Pendant operation of the `initialize` one to cleanup the utilities.
-    /// The number of calls to `shutdown` must equal the number of calls to
-    /// `initialize`, without corresponding `shutdown` calls, to fully
-    /// destroy the objects.  It is safe to call `initialize` after calling
-    /// `shutdown`.  The behaviour is undefined if `shutdown` is called
-    /// without `initialize` first being called.
+    /// @brief Do nothing.  Provided for symmetry with `initialize`.
     static void shutdown();
 
-    /// Return the `TimeInterval` value representing the current system time
-    /// according to the currently installed real-time clock.  The behavior
-    /// is undefined unless one of the flavors of `initialize()` has been
-    /// called prior to calling this method.
+    /// @brief Replace the clocks and the timer with the specified callbacks
+    ///        for as long as the returned guard lives.
+    ///
+    /// The behavior is undefined if another guard is alive.
+    ///
+    /// @param realTimeClockCb  The real-time clock.
+    /// @param monotonicClockCb The monotonic clock.
+    /// @param highResTimeCb    The high resolution timer.
+    /// @param allocator        The allocator to use, or the default
+    ///                         allocator if not specified.
+    ///
+    /// @return The guard keeping the callbacks installed.
+    static bslma::ManagedPtr<MockTimeGuard>
+    mockTime(const SystemTimeCb&         realTimeClockCb,
+             const SystemTimeCb&         monotonicClockCb,
+             const HighResolutionTimeCb& highResTimeCb,
+             bslma::Allocator*           allocator = 0);
+
+    /// @brief Return the current time of the real-time clock.
     static bsls::TimeInterval nowRealtimeClock();
 
-    /// Return the `TimeInterval` value representing the current system time
-    /// according to the currently installed monotonic clock.  The behavior
-    /// is undefined unless one of the flavors of `initialize()` has been
-    /// called prior to calling this method.
+    /// @brief Return the current time of the monotonic clock.
     static bsls::TimeInterval nowMonotonicClock();
 
-    /// Return the value representing the current high resolution time
-    /// according to the currently installed high resolution timer.  The
-    /// behavior is undefined unless one of the flavors of `initialize()`
-    /// has been called prior to calling this method.
+    /// @brief Return the current value of the high resolution timer.
     static bsls::Types::Int64 highResolutionTimer();
+};
+
+// =========================
+// class Time::MockTimeGuard
+// =========================
+
+/// @brief Install mock clocks and timer into `Time` for the lifetime of this
+///        object.
+///
+/// At most one guard may be alive at a time.  The guard must outlive any
+/// concurrent call to `Time`.
+class Time::MockTimeGuard {
+  private:
+    // DATA
+    SystemTimeCb         d_realTimeClock;
+    SystemTimeCb         d_monotonicClock;
+    HighResolutionTimeCb d_highResTimer;
+
+    // FRIENDS
+    friend struct Time;
+
+  private:
+    // NOT IMPLEMENTED
+    MockTimeGuard(const MockTimeGuard&) BSLS_KEYWORD_DELETED;
+    MockTimeGuard& operator=(const MockTimeGuard&) BSLS_KEYWORD_DELETED;
+
+  public:
+    // TRAITS
+    BSLMF_NESTED_TRAIT_DECLARATION(MockTimeGuard, bslma::UsesBslmaAllocator)
+
+    // CREATORS
+
+    /// @brief Install the specified callbacks into `Time`.
+    ///
+    /// @param realTimeClockCb  The real-time clock.
+    /// @param monotonicClockCb The monotonic clock.
+    /// @param highResTimeCb    The high resolution timer.
+    /// @param allocator        The allocator to use.
+    MockTimeGuard(const SystemTimeCb&         realTimeClockCb,
+                  const SystemTimeCb&         monotonicClockCb,
+                  const HighResolutionTimeCb& highResTimeCb,
+                  bslma::Allocator*           allocator);
+
+    /// @brief Uninstall the callbacks from `Time`.
+    ~MockTimeGuard();
 };
 
 }  // close package namespace

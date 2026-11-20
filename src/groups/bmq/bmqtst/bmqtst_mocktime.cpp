@@ -17,8 +17,6 @@
 
 #include <bmqscm_version.h>
 
-#include <bmqu_time.h>
-
 // BDE
 #include <bdlf_memfn.h>
 
@@ -29,20 +27,16 @@ namespace bmqtst {
 // class MockTime
 // --------------
 
-MockTime::MockTime()
+MockTime::MockTime(bslma::Allocator* allocator)
 : d_realtimeClock(0, 0)
 , d_monotonicClock(0, 0)
 , d_highResTimer(0)
+, d_guard_mp(bmqu::Time::mockTime(
+      bdlf::MemFnUtil::memFn(&MockTime::realtimeClock, this),
+      bdlf::MemFnUtil::memFn(&MockTime::monotonicClock, this),
+      bdlf::MemFnUtil::memFn(&MockTime::highResTimer, this),
+      allocator))
 {
-    bmqu::Time::initialize(
-        bdlf::MemFnUtil::memFn(&MockTime::realtimeClock, this),
-        bdlf::MemFnUtil::memFn(&MockTime::monotonicClock, this),
-        bdlf::MemFnUtil::memFn(&MockTime::highResTimer, this));
-}
-
-MockTime::~MockTime()
-{
-    bmqu::Time::shutdown();
 }
 
 MockTime& MockTime::setRealTimeClock(const bsls::TimeInterval& value)

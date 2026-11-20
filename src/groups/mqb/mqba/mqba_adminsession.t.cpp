@@ -517,7 +517,7 @@ int main(int argc, char* argv[])
     TEST_PROLOG(bmqtst::TestHelper::e_DEFAULT);
 
     {
-        bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+        bmqu::Time::initialize();
 
         mqbcfg::AppConfig brokerConfig(bmqtst::TestHelperUtil::allocator());
         mqbcfg::BrokerConfig::set(brokerConfig);

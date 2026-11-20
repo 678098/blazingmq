@@ -2791,7 +2791,7 @@ int main(int argc, char* argv[])
 
     // Setup the test clock (once per task)
     s_electorClock = new (*bmqtst::TestHelperUtil::allocator())
-        bmqtst::MockTime;
+        bmqtst::MockTime(bmqtst::TestHelperUtil::allocator());
 
     switch (_testCase) {
     case 0:
@@ -2821,7 +2821,7 @@ int main(int argc, char* argv[])
     } break;
     }
 
-    bmqtst::TestHelperUtil::allocator()->deallocate(s_electorClock);
+    bmqtst::TestHelperUtil::allocator()->deleteObject(s_electorClock);
 
     TEST_EPILOG(bmqtst::TestHelper::e_CHECK_DEF_GBL_ALLOC);
 }

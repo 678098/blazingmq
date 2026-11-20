@@ -157,6 +157,8 @@ struct TestHelper {
 
     bmqu::TempDirectory d_tempArchiveDir;
 
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
+
     // CREATORS
     TestHelper()
     : d_cluster_mp(0)
@@ -217,7 +219,7 @@ struct TestHelper {
         // To pass `inDispatcherThread` checks (allow ANY thread):
         d_cluster_mp->setThreadId(mqbi::DispatcherClient::k_ANY_THREAD_ID);
 
-        bmqu::Time::initialize(
+        d_timeGuard_mp = bmqu::Time::mockTime(
             &bsls::SystemTime::nowRealtimeClock,
             bdlf::BindUtil::bind(&TestHelper::nowMonotonicClock, this),
             bdlf::BindUtil::bind(&TestHelper::highResolutionTimer, this),
@@ -1149,8 +1151,6 @@ struct TestHelper {
                 mqbi::DispatcherClient::k_ANY_THREAD_ID);
         }
     }
-
-    ~TestHelper() { bmqu::Time::shutdown(); }
 
     size_t numPartitions() const
     {

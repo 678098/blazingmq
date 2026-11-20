@@ -184,6 +184,7 @@ TestContext::TestContext(const AuthnCredentialCb& authnCredentialCb)
 , d_blobSpPool(
       bmqp::BlobPoolUtil::createBlobPool(&d_bufferFactory,
                                          bmqtst::TestHelperUtil::allocator()))
+, d_mockTime(bmqtst::TestHelperUtil::allocator())
 , d_scheduler(bsls::SystemClockType::e_MONOTONIC,
               bmqtst::TestHelperUtil::allocator())
 , d_timeSource(&d_scheduler)

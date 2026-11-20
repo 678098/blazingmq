@@ -765,7 +765,7 @@ void MockSession::initialize(bslma::Allocator* allocator)
 
     g_alloc_p = bslma::Default::globalAllocator(allocator);
 
-    bmqu::Time::initialize(g_alloc_p);
+    bmqu::Time::initialize();
     g_bufferFactory_p = new (*g_alloc_p)
         bdlbb::PooledBlobBufferFactory(1024, g_alloc_p);
     g_guidGenerator_sp.createInplace(g_alloc_p, 0);

@@ -17,13 +17,12 @@
 
 #include <bmqscm_version.h>
 // BDE
-#include <bdlf_bind.h>
 #include <bslma_default.h>
 #include <bslmf_allocatorargt.h>
-#include <bslmt_qlock.h>
+#include <bslmt_once.h>
 #include <bsls_assert.h>
-#include <bsls_atomic.h>
-#include <bsls_objectbuffer.h>
+#include <bsls_atomicoperations.h>
+#include <bsls_performancehint.h>
 #include <bsls_systemtime.h>
 #include <bsls_timeutil.h>
 
@@ -31,136 +30,112 @@ namespace BloombergLP {
 namespace bmqu {
 
 namespace {
-bsls::ObjectBuffer<Time::SystemTimeCb> g_realTimeClock;
-bsls::ObjectBuffer<Time::SystemTimeCb> g_monotonicClock;
 
-/// Globals holding the various timer callback set up.  Note that an object
-/// buffer is needed to avoid exit time destructors because bsl::function is
-/// a non-POD type.
-bsls::ObjectBuffer<Time::HighResolutionTimeCb> g_highResTimer;
+/// The currently alive `Time::MockTimeGuard`, if any.  A POD type so that it
+/// is zero-initialized at compile time, with no constructor to run.
+bsls::AtomicOperations::AtomicTypes::Pointer g_mock;
 
-int g_initialized = 0;
-// Integer to keep track of the number of
-// calls to 'initialize' for the 'Time'.
-// If the value is non-zero, then it has
-// already been initialized, otherwise it
-// can be initialized.  Each call to
-// 'initialize' increments the value of
-// this integer by one.  Each call to
-// 'shutdown' decrements the value of this
-// integer by one.  If the decremented
-// value is zero, then the 'Time' is
-// destroyed.
+/// @brief Return the currently alive `Time::MockTimeGuard`, if any.
+///
+/// Also initialize `bsls::TimeUtil` on the first call.
+const Time::MockTimeGuard* loadMock()
+{
+    BSLMT_ONCE_DO
+    {
+        bsls::TimeUtil::initialize();
+    }
 
-bslmt::QLock g_initLock = BSLMT_QLOCK_INITIALIZER;
-// Lock used to provide thread-safe
-// protection for accessing the
-// 'g_initialized' counter.
+    return static_cast<const Time::MockTimeGuard*>(
+        bsls::AtomicOperations::getPtrAcquire(&g_mock));
+}
+
 }  // close unnamed namespace
 
 // -----------
 // struct Time
 // -----------
 
-void Time::initialize(bslma::Allocator* allocator)
+void Time::initialize()
 {
-    // PRECONDITIONS
-    bslmt::QLockGuard qlockGuard(&g_initLock);
-
-    // NOTE: We pre-increment here instead of post-incrementing inside the
-    //       conditional check below because the post-increment of an int does
-    //       not work correctly with versions of IBM xlc12 released following
-    //       the Dec 2015 PTF.
-    ++g_initialized;
-    if (g_initialized > 1) {
-        return;  // RETURN
-    }
-
-    bslma::Allocator* alloc = bslma::Default::globalAllocator(allocator);
-
-    new (g_realTimeClock.buffer()) SystemTimeCb(
-        bsl::allocator_arg,
-        alloc,
-        bdlf::BindUtil::bind(&bsls::SystemTime::nowRealtimeClock));
-
-    new (g_monotonicClock.buffer()) SystemTimeCb(
-        bsl::allocator_arg,
-        alloc,
-        bdlf::BindUtil::bind(&bsls::SystemTime::nowMonotonicClock));
-
-    new (g_highResTimer.buffer())
-        HighResolutionTimeCb(bsl::allocator_arg,
-                             alloc,
-                             bdlf::BindUtil::bind(&bsls::TimeUtil::getTimer));
-
     bsls::TimeUtil::initialize();
-}
-
-void Time::initialize(const SystemTimeCb&         realTimeClockCb,
-                      const SystemTimeCb&         monotonicClockCb,
-                      const HighResolutionTimeCb& highResTimeCb,
-                      bslma::Allocator*           allocator)
-{
-    // PRECONDITIONS
-    bslmt::QLockGuard qlockGuard(&g_initLock);
-
-    // NOTE: We pre-increment here instead of post-incrementing inside the
-    //       conditional check below because the post-increment of an int does
-    //       not work correctly with versions of IBM xlc12 released following
-    //       the Dec 2015 PTF.
-    ++g_initialized;
-    if (g_initialized > 1) {
-        return;  // RETURN
-    }
-
-    bslma::Allocator* alloc = bslma::Default::globalAllocator(allocator);
-
-    new (g_realTimeClock.buffer())
-        SystemTimeCb(bsl::allocator_arg, alloc, realTimeClockCb);
-    new (g_monotonicClock.buffer())
-        SystemTimeCb(bsl::allocator_arg, alloc, monotonicClockCb);
-    new (g_highResTimer.buffer())
-        HighResolutionTimeCb(bsl::allocator_arg, alloc, highResTimeCb);
 }
 
 void Time::shutdown()
 {
-    bslmt::QLockGuard qlockGuard(&g_initLock);
+}
 
-    // PRECONDITIONS
-    BSLS_ASSERT_SAFE(g_initialized > 0 && "'initialize' was not called");
-
-    if (--g_initialized != 0) {
-        return;  // RETURN
-    }
-
-    g_realTimeClock.object().~SystemTimeCb();
-    g_monotonicClock.object().~SystemTimeCb();
-    g_highResTimer.object().~HighResolutionTimeCb();
+bslma::ManagedPtr<Time::MockTimeGuard>
+Time::mockTime(const SystemTimeCb&         realTimeClockCb,
+               const SystemTimeCb&         monotonicClockCb,
+               const HighResolutionTimeCb& highResTimeCb,
+               bslma::Allocator*           allocator)
+{
+    return bslma::ManagedPtrUtil::allocateManaged<MockTimeGuard>(
+        bslma::Default::allocator(allocator),
+        realTimeClockCb,
+        monotonicClockCb,
+        highResTimeCb);
 }
 
 bsls::TimeInterval Time::nowRealtimeClock()
 {
-    // PRECONDITIONS
-    BSLS_ASSERT_SAFE(g_initialized && "Not initialized");
+    const MockTimeGuard* mock = loadMock();
+    if (BSLS_PERFORMANCEHINT_PREDICT_UNLIKELY(mock)) {
+        BSLS_PERFORMANCEHINT_UNLIKELY_HINT;
+        return mock->d_realTimeClock();  // RETURN
+    }
 
-    return g_realTimeClock.object()();
+    return bsls::SystemTime::nowRealtimeClock();
 }
 
 bsls::TimeInterval Time::nowMonotonicClock()
 {
-    // PRECONDITIONS
-    BSLS_ASSERT_SAFE(g_initialized && "Not initialized");
+    const MockTimeGuard* mock = loadMock();
+    if (BSLS_PERFORMANCEHINT_PREDICT_UNLIKELY(mock)) {
+        BSLS_PERFORMANCEHINT_UNLIKELY_HINT;
+        return mock->d_monotonicClock();  // RETURN
+    }
 
-    return g_monotonicClock.object()();
+    return bsls::SystemTime::nowMonotonicClock();
 }
 
 bsls::Types::Int64 Time::highResolutionTimer()
 {
-    // PRECONDITIONS
-    BSLS_ASSERT_SAFE(g_initialized && "Not initialized");
+    const MockTimeGuard* mock = loadMock();
+    if (BSLS_PERFORMANCEHINT_PREDICT_UNLIKELY(mock)) {
+        BSLS_PERFORMANCEHINT_UNLIKELY_HINT;
+        return mock->d_highResTimer();  // RETURN
+    }
 
-    return g_highResTimer.object()();
+    return bsls::TimeUtil::getTimer();
+}
+
+// -------------------------
+// class Time::MockTimeGuard
+// -------------------------
+
+Time::MockTimeGuard::MockTimeGuard(const SystemTimeCb& realTimeClockCb,
+                                   const SystemTimeCb& monotonicClockCb,
+                                   const HighResolutionTimeCb& highResTimeCb,
+                                   bslma::Allocator*           allocator)
+: d_realTimeClock(bsl::allocator_arg, allocator, realTimeClockCb)
+, d_monotonicClock(bsl::allocator_arg, allocator, monotonicClockCb)
+, d_highResTimer(bsl::allocator_arg, allocator, highResTimeCb)
+{
+    const void* previous = bsls::AtomicOperations::testAndSwapPtr(&g_mock,
+                                                                  0,
+                                                                  this);
+    BSLS_ASSERT_OPT(!previous && "Another MockTimeGuard is alive");
+    (void)previous;
+}
+
+Time::MockTimeGuard::~MockTimeGuard()
+{
+    const void* previous = bsls::AtomicOperations::testAndSwapPtr(&g_mock,
+                                                                  this,
+                                                                  0);
+    BSLS_ASSERT_OPT(previous == this);
+    (void)previous;
 }
 
 }  // close package namespace

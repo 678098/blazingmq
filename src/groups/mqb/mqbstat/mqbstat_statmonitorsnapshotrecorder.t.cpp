@@ -128,7 +128,7 @@ static void test1_usageExample()
 {
     bmqtst::TestHelper::printTestName("USAGE EXAMPLE");
 
-    bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+    bmqu::Time::initialize();
 
     const bsl::string k_HEADER("Cluster (testCluster): ",
                                bmqtst::TestHelperUtil::allocator());
@@ -257,7 +257,7 @@ static void test2_totalElapsed()
 {
     bmqtst::TestHelper::printTestName("TOTAL ELAPSED");
 
-    bmqtst::MockTime mockTime;
+    bmqtst::MockTime mockTime(bmqtst::TestHelperUtil::allocator());
 
     mqbstat::StatMonitorSnapshotRecorder obj("HEADER");
 

@@ -582,6 +582,8 @@ class TimeControlledQueueEngineTester : public mqbblp::QueueEngineTester {
   private:
     TestClock d_testClock;
 
+    bslma::ManagedPtr<bmqu::Time::MockTimeGuard> d_timeGuard_mp;
+
   public:
     // CREATORS
     TimeControlledQueueEngineTester(const mqbconfm::Domain& domainConfig,
@@ -589,11 +591,11 @@ class TimeControlledQueueEngineTester : public mqbblp::QueueEngineTester {
     : mqbblp::QueueEngineTester(domainConfig, true, allocator)
     , d_testClock(d_mockCluster_mp->_timeSource())
     {
-        bmqu::Time::shutdown();
-        bmqu::Time::initialize(
+        d_timeGuard_mp = bmqu::Time::mockTime(
             bdlf::BindUtil::bind(&TestClock::realtimeClock, &d_testClock),
             bdlf::BindUtil::bind(&TestClock::monotonicClock, &d_testClock),
-            bdlf::BindUtil::bind(&TestClock::highResTimer, &d_testClock));
+            bdlf::BindUtil::bind(&TestClock::highResTimer, &d_testClock),
+            allocator);
     }
 
     // MANIPULATORS

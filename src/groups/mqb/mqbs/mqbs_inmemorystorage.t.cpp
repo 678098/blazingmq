@@ -1556,7 +1556,7 @@ int main(int argc, char* argv[])
 
     TEST_PROLOG(bmqtst::TestHelper::e_CHECK_GBL_ALLOC);
 
-    bmqu::Time::initialize(bmqtst::TestHelperUtil::allocator());
+    bmqu::Time::initialize();
 
     {
         mqbcfg::AppConfig brokerConfig(bmqtst::TestHelperUtil::allocator());
